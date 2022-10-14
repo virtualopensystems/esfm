@@ -1,0 +1,524 @@
+#!/bin/env bash
+################################################################################
+# Copyright (C) 2022 - Virtual Open Systems SAS - All rights reserved.
+# Reproduction and communication of this document is strictly prohibited
+# unless specifically authorized in writing by Virtual Open Systems.
+################################################################################
+# File Name   : esfm
+# Author      : STEFANO CIRICI <s.cirici@virtualopensystems.com>
+# Description : This file composes the EVEREST SRIOV FPGA Manager
+#               functionalities allowing to initialize and control the Virtual
+#               Functions to VM association (attach and detach) in a libvirt
+#               KVM/QEMU VMM.
+################################################################################
+
+# Fail fast
+set -E
+#set -e  # check if command fail, disabled for using err_check
+set -u
+set -o pipefail
+
+# Register trap function to interr()
+trap interr SIGINT SIGQUIT
+
+## FUNCTIONS ###################################################################
+
+# usage()
+#   Print usage of the script
+function usage() {
+cat <<EOF
+EVEREST SRIOV FPGA manager
+Utility to attach and detach VF to VMs
+
+Usage: $(basename $0) <command> [options]
+
+Available commands:
+  init <VF_NUM>             Init PF device with VF_NUM virtual functions and
+                              attach them to VM (flash bitstream if provided)
+  reconf <VF_NUM>           Reconfigure num of VF and attach them to VMs (flash
+                              bitstream if provided). Use 0 to remove all VFs
+
+Available options:
+  -p, --pf_dev <ID>         Define the PF device ID in the format
+                              DDDD:BB:DD.F Domain:Bus:Device.Function
+                              default is $PF_DEV_DEFAULT
+  -b, --bitstream <file>    Also flash the provided bitstream file
+  -qn, --queues_num <num>   Define number of queues during init, default is $Q_NUM_DEFAULT
+  -vm, --vm_names <name>    Define VM base name, VM index will be appended
+                              based on VF_NUM, default is $VM_BASE_NAME_DEFAULT
+  -h, --help                Print this help and exit
+  -q, --quiet               Do not print info messages
+  -d, --driver_log          Print driver log info
+  -v, --verbose             Print script debug info
+  -y, --yes                 Automatic yes to prompts
+EOF
+}
+
+# interr()
+#   Trap function
+function interr() {
+    trap - SIGINT SIGQUIT
+    echo
+    echo "Process interrupted"
+    exit 2
+}
+
+# msg(message string)
+#   Print log and errors if not in quiet mode
+#   $1 message string to print
+function msg() {
+    if [ $QUIET -eq 0 ] ; then
+        echo -e "${1-}"
+    fi
+}
+
+# err_check(ERR code, ERR msg)
+#   Check error code, eventually printing the message, and exit if error
+#   $1 error code, 0 if no error
+#   $2 optional message to print if error occurs (error != 0)
+function err_check()
+{
+    if [ $1 != 0 ]; then
+        if [ -n "$2" ]; then
+            echo "ERROR $1: $2"
+        else
+            echo "ERROR $1"
+        fi
+        exit $1
+    fi
+}
+
+# ask(question)
+#   Ask a question and wait for y or Y response, exit otherwise
+#   $1 question to ask
+function ask() {
+    if [ $# -ne 1 ] ; then
+        err_check 2 "Invalid parameters ${FUNCNAME[0]}()"
+    fi
+
+    if [ $ASSUME_YES -eq 0 ] ; then
+        # Ask to remove
+        while true; do
+            read -p "${1} [y/N] " yn
+            case $yn in
+                [Yy]* ) break;;
+                * )     echo "Exiting"; exit 0;;
+            esac
+        done
+    fi
+}
+
+# remove(PF dev ID)
+#   Remove a PF device (and all its VF) from PCI bus
+#   $1 PF device ID to be removed
+function remove() {
+    if [ $# -ne 1 ] ; then
+        err_check 2 "Invalid parameters to func ${FUNCNAME[0]}()"
+    fi
+    local pf_dev=${1:0:10}
+
+    ask "Are you sure you want to remove $pf_dev?"
+    msg "Removing device $pf_dev"
+
+    # Call qdma manage script and remove PCI device
+    $QDMA_MANAGER remove -b $pf_dev -y ${DRIVER_LOG}
+    err_check $? "Failed removing $pf_dev"
+}
+
+# rescan()
+#   Rescan PCI bus
+function rescan() {
+    msg "Rescanning PCI bus"
+
+    # Call qdma manage script and refresh PCI device list
+    $QDMA_MANAGER rescan -y ${DRIVER_LOG}
+    err_check $? "Failed rescanning PCI bus"
+}
+
+# flash_bitstream(bitstream file)
+#   Flash the bitstream to the FPGA
+#   $1 file bitsream.bit to flash
+function flash_bitstream() {
+    if [ $# -ne 1 ] ; then
+        err_check 2 "Invalid parameters to func ${FUNCNAME[0]}()"
+    fi
+    local bitstream=$1
+
+    if [ ! -f "$bitstream" ] ; then
+        err_check 1 "Invalid file $bitstream"
+    fi
+
+    ask "Are you sure you want to flash the FPGA bitstream?"
+    msg "Flashing $bitstream to FPGA"
+
+    # suspend trap during bitstream flashing
+    trap '' SIGINT SIGQUIT
+
+    if command -v xsct > /dev/null 2>&1
+    then
+        xsct ${PROGRAM_XSCT} ${bitstream}
+    elif command -v vivado > /dev/null 2>&1
+    then
+        vivado -notrace -nolog -nojournal -mode batch -source ${PROGRAM_VIVADO} -tclargs ${bitstream}
+    fi
+    err_check $? "Failed flashing bitstream $bitstream"
+
+    # resume trap
+    trap interr SIGINT SIGQUIT
+}
+
+# set_queues(PF dev ID, queues num)
+#   Set number of queues for PF device
+#   $1 ID of PF
+#   $2 num of queues to set
+function set_queues() {
+    if [ $# -ne 2 ] ; then
+        err_check 2 "Invalid parameters to func ${FUNCNAME[0]}()"
+    fi
+    local pf_dev=$1
+    local num_q=$2
+
+    msg "Adding $num_q queues to dev $pf_dev"
+    echo $num_q | sudo tee ${DEVICE_PATH}/${pf_dev}/qdma/qmax > /dev/null
+    err_check $? "Failed setting $num_q queues"
+
+    local num_q_check=$(cat ${DEVICE_PATH}/${pf_dev}/qdma/qmax 2> /dev/null)
+    if [ -z "$num_q_check" ] || [ $num_q_check -ne $num_q ] ; then
+        err_check 1 "Failed setting $num_q queues, set ${num_q_check:=0} instead"
+    fi
+}
+
+# set_vfn(PF dev ID, VF num)
+#   Set VF number to PF device
+#   $1 ID of PF
+#   $2 num of VF to set
+function set_vfn() {
+    if [ $# -ne 2 ] ; then
+        err_check 2 "Invalid parameters to func ${FUNCNAME[0]}()"
+    fi
+    local pf_dev=$1
+    local num_vf=$2
+
+    msg "Creating $num_vf VFs on dev $pf_dev"
+    echo $num_vf | sudo tee ${DEVICE_PATH}/${pf_dev}/sriov_numvfs > /dev/null
+    err_check $? "Failed setting $num_vf VFs"
+
+    local num_vf_check=$(cat ${DEVICE_PATH}/${pf_dev}/sriov_numvfs 2> /dev/null)
+    if [ -z "$num_vf_check" ] || [ $num_vf_check -ne $num_vf ] ; then
+        err_check 1 "Failed setting $num_vf VFs, set ${num_vf_check:=0} instead"
+    fi
+}
+
+# check_vm_num(num_vm)
+#   Check if the number of existing VM is enough
+#   $1 num of vm to check
+function check_vm_num() {
+    if [ $# -ne 1 ] ; then
+        err_check 2 "Invalid parameters to func ${FUNCNAME[0]}()"
+    fi
+    local min_num_vm=$1
+
+    # Check number of VM
+    local num_vm=$(virsh list --all | grep ${VM_BASE_NAME} | wc -l)
+
+    # Check enough VM are available
+    if [ $num_vm -lt $min_num_vm ] ; then
+        msg "You have $num_vm VM but $min_num_vm are required"
+        msg "You can clone them using:"
+        msg "  $ virt-clone --original ${VM_BASE_NAME}0 --name ${VM_BASE_NAME}<VM#> --auto-clone"
+        msg "or reduce the number of VF to $num_vm"
+        exit 0
+    fi
+    msg "Found $num_vm VM in the system of $min_num_vm needed"
+}
+
+# wait_vm_on(num_vm)
+#   Wait for all the num_vm VM to be on
+#   $1 num of running vm to wait for
+function wait_vm_on() {
+    if [ $# -ne 1 ] ; then
+        err_check 2 "Invalid parameters to func ${FUNCNAME[0]}()"
+    fi
+    local min_num_vm=$1
+
+    # Check number of VM
+    local num_vm_on=$(virsh list | grep ${VM_BASE_NAME}[0-9]* | wc -l)
+
+    while [ $num_vm_on -lt $min_num_vm ] ; do
+        local vm_diff=$(( min_num_vm - num_vm_on ))
+        read -p "Please start $vm_diff more VM"
+        num_vm_on=$(virsh list | grep ${VM_BASE_NAME} | wc -l)
+    done
+
+    msg "$num_vm_on VMs are on"
+}
+
+# virsh_dev(VM index, attach/detach, VF dev ID)
+#   Attach or detach VF devices to virsh VM
+#   $1 VM index
+#   $2 0 to detach, otherwise attach
+#   $3 VF device ID
+function virsh_dev() {
+    if [ $# -ne 3 ] ; then
+        err_check 2 "Invalid parameters to func ${FUNCNAME[0]}()"
+    fi
+    local vmi=$1
+    local virsh_opt="detach-device"
+    local vf_dev=$3
+
+    local vf_file="${TMP_BASE}${vmi}_${vf_dev#0000:}${TMP_EXT}"
+
+    if [ -f $vf_file ] ; then
+        msg "It seems that a VF is already attached to VM $vmi, skipping"
+        return
+    fi
+
+    if [ $2 -ne 0 ] ; then
+        virsh_opt="attach-device"
+    fi
+
+# Write xml configuration file for current VF device to be added to the VM with virsh
+cat << EOF > $vf_file
+<hostdev mode='subsystem' type='pci' managed='yes'>
+  <source>
+     <address domain='0x${vf_dev:0:4}' bus='0x${vf_dev:5:2}' slot='0x${vf_dev:8:2}' function='0x${vf_dev:11:2}'/>
+  </source>
+</hostdev>
+EOF
+    virsh ${virsh_opt} ${VM_BASE_NAME}${vmi} ${vf_file} --live --config > /dev/null
+    #err_check $? "Failed attaching VF $vf_dev to VM ${VM_BASE_NAME}${vmi}"
+}
+
+# attach_vf(PF dev ID, VF num)
+#   Attach VF to running VMs
+#   $1 PF device ID
+#   $2 num of VF to attach
+function attach_vf() {
+    if [ $# -ne 2 ] ; then
+        err_check 2 "Invalid parameters ${FUNCNAME[0]}()"
+    fi
+    local pf_dev=$1
+    local num_vf=$2
+
+    if [ $num_vf -eq 0 ]; then
+        return
+    fi
+
+    # Getting DEV LIST of created VFs from their ID
+    local vf_dev_id=$(cat /sys/bus/pci/devices/${pf_dev}/sriov_vf_device)
+    local vf_dev_list=($(lspci -D -d :$vf_dev_id: | cut -d " " -f 1))
+    if [ -z "${vf_dev_list:=""}" ] || [ ${#vf_dev_list[@]} -ne $num_vf ] ; then
+        err_check 1 "Failed getting VF devices of $pf_dev"
+    fi
+
+    # For each VF, attach device
+    for (( i=0; i < $num_vf; i++ ))
+    do
+        # Unbind VF from its driver
+        $QDMA_MANAGER unbind -b ${vf_dev_list[i]} -y ${DRIVER_LOG}
+
+        msg "Attaching VF ${vf_dev_list[i]} to VM ${VM_BASE_NAME}${i}"
+        # virsh_dev(VM index, attach, VF dev id)
+        virsh_dev $i 1 ${vf_dev_list[i]}
+    done
+}
+
+# detach_vf(PF dev ID, VF num)
+#   Detach VF from running VMs
+#   $1 PF device ID
+#   $2 num of VF to detach, -1 to detach all
+function detach_vf() {
+    if [ $# -ne 2 ] ; then
+        err_check 2 "Invalid parameters ${FUNCNAME[0]}()"
+    fi
+    local pf_dev=$1
+    local num_vf=$2
+
+    # Getting DEV LIST of created VFs from their ID
+    local vf_dev_id=$(cat /sys/bus/pci/devices/${pf_dev}/sriov_vf_device)
+    local vf_dev_list=($(lspci -D -d :$vf_dev_id: | cut -d " " -f 1))
+
+    if [ $num_vf -eq -1 ]; then
+        num_vf=${#vf_dev_list[@]}
+    fi
+
+    if [ -z "${vf_dev_list:=""}" ] || [ ${#vf_dev_list[@]} -ne $num_vf ] ; then
+        msg "No VF to detach from $pf_dev"
+        return
+    fi
+
+    # For each VF, detach device
+    for (( i=0; i < $num_vf; i++ ))
+    do
+        msg "Detaching VF ${vf_dev_list[i]} from VM ${VM_BASE_NAME}${i}"
+        # virsh_dev(VM index, detach, VF dev id)
+        virsh_dev $i 0 ${vf_dev_list[i]}
+    done
+}
+
+# virsh_detach_all()
+#   Detach all VF devices from virsh VMs
+function virsh_detach_all() {
+
+    # For every vm tmp file
+    for file in $(ls ${TMP_BASE}[0-9]*.*${TMP_EXT} 2> /dev/null) ; do
+        # Extract VM index and VF id
+        # format of file name is PFID_VMnameVMindex_VFID.extension
+        vmi=$(echo $file | sed -e "s/${TMP_BASE}\([0-9]*\)_.*${TMP_EXT}/\1/")
+        vfi=$(echo $file | sed -e "s/${TMP_BASE}[0-9]*_\(.*\)${TMP_EXT}/\1/")
+
+        local vm_find=$(virsh list | grep "${VM_BASE_NAME}${vmi}" | wc -l)
+        if [ $vm_find -eq 1 ] ; then
+            msg "Detaching VF ${vfi} from VM ${VM_BASE_NAME}${vmi}"
+            virsh detach-device ${VM_BASE_NAME}${vmi} ${file} --live --config > /dev/null
+            rm $file
+        else
+            msg "VM ${VM_BASE_NAME}${vmi} is off, skipping"
+        fi
+
+    done
+}
+
+################################################################################
+
+# Constant parameters
+declare -r QDMA_MANAGER="./tools/qdma_manager.sh"
+declare -r PROGRAM_XSCT="./tools/program_xsct.tcl"
+declare -r PROGRAM_VIVADO="./tools/program_vivado.tcl"
+declare -r DEVICE_PATH="/sys/bus/pci/devices"
+declare -r TMP_EXT=".xml"
+declare -r Q_NUM_DEFAULT=32
+declare -r PF_DEV_DEFAULT="0000:e1:00.0"
+declare -r VM_BASE_NAME_DEFAULT="everestg"
+
+# Check scripts manfdatory existance
+if [ ! -f $QDMA_MANAGER ] ; then
+    err_check 2 "Missing QDMA manager script"
+fi
+if [ ! -f $PROGRAM_XSCT ] ; then
+    err_check 2 "Missing XSCT program script"
+fi
+if [ ! -f $PROGRAM_VIVADO ] ; then
+    err_check 2 "Missing Vivado program script"
+fi
+
+# Default parameter values
+QUIET=0
+ASSUME_YES=0
+INIT=0
+RECONF=0
+BITFILE=""
+VF_NUM=0
+DRIVER_LOG="-q"
+PF_DEV=$PF_DEV_DEFAULT
+Q_NUM=$Q_NUM_DEFAULT
+VM_BASE_NAME=$VM_BASE_NAME_DEFAULT
+
+# Parse input parameters
+while [[ $# -gt 0 ]]
+do
+    case ${1-} in
+    # commands
+        init)                   INIT=1; VF_NUM=${2-}; shift ;;
+        reconf)                 RECONF=1; VF_NUM=${2-}; shift;;
+    # options
+        -b | --bitstream)       BITFILE=${2-}; shift ;;
+        -p | --pf_dev)          PF_DEV=${2-}; shift ;;
+        -qn | --queues_num)     Q_NUM=${2-}; shift ;;
+        -vm | --vm_names)       VM_BASE_NAME=${2-}; shift ;;
+        -q | --quiet)           QUIET=1 ;;
+        -d | --driver_log)      DRIVER_LOG="" ;;
+        -y | --yes)             ASSUME_YES=1 ;;
+        -v | --verbose)         set -x ;;
+        -h | --help)            usage && exit 0 ;;
+        *)
+                                echo "Unknown option: ${1}"
+                                usage
+                                exit 1
+                                ;;
+    esac
+    shift
+done
+
+# Mute driver log if quiet option enabled
+if [ $QUIET -eq 1 ] ; then
+    DRIVER_LOG="-q"
+fi
+
+# Check for a valid VF_NUM
+if [ -z "$VF_NUM" ] ; then
+    echo "Please provide a valid VF_NUM"
+    usage
+    exit 1
+fi
+
+# Check for a valid PF dev ID
+if [[ ! "$PF_DEV" =~ ^[0-9A-Fa-f]{4}\:[0-9A-Fa-f]{2}\:[0-9A-Fa-f]{2}\.[0-7]{1}$ ]] ; then
+    err_check 1 "Invalid PF device ID ${PF_DEV-NULL}, format is DDDD:BB:DD.F"
+fi
+
+# Create name of temp file for current PF after parsing of pf_dev argument
+declare -r TMP_BASE=".${PF_DEV#0000:}_${VM_BASE_NAME}"
+
+# Check if only one between init and reconf is selected
+if [ $INIT -eq 1 ] && [ $RECONF -eq 0 ] ; then
+    # Init procedue
+
+    # If tmp files are present, VF were assigned to VM but not detached
+    TMP_FILES=$(ls ${TMP_BASE}[0-9]*.*${TMP_EXT} 2> /dev/null)
+    if [ -n "$TMP_FILES" ] ; then
+        msg "It seems like some devices are already attached to some VM"
+        msg "Initializing them again could cause inconsistencies on the VMs"
+        ask "Do you want to proceed anyway?"
+    fi
+
+    check_vm_num $VF_NUM
+    remove $PF_DEV
+
+    # Also flash bitstream if option is provided
+    if [ -n "$BITFILE" ]; then
+        flash_bitstream $BITFILE
+    fi
+
+    rescan
+
+    set_queues $PF_DEV $Q_NUM
+
+elif [ $RECONF -eq 1 ] && [ $INIT -eq 0 ] ; then
+
+    # Reconfigure procedure
+    rescan
+
+    CURR_VF_NUM=$(cat ${DEVICE_PATH}/${PF_DEV}/sriov_numvfs 2> /dev/null)
+    CURRVF_NUM=${CURR_VF_NUM:=0}
+    if [ $CURR_VF_NUM -eq $VF_NUM ]; then
+        ask "There are already $VF_NUM VF, do you want to continue anyway?"
+    fi
+
+    virsh_detach_all
+
+    # Also flash bitstream if provided
+    if [ -n "$BITFILE" ]; then
+        remove $PF_DEV
+        flash_bitstream $BITFILE
+        rescan
+        set_queues $PF_DEV $Q_NUM
+    fi
+
+    # Need to reset VF num before changing it
+    set_vfn $PF_DEV 0
+
+else
+    echo "Error: Select init OR reconf option!"
+    usage
+    exit 1
+fi
+
+# Common operations after init or reconf procedures
+if [ $VF_NUM -gt 0 ]; then
+    wait_vm_on $VF_NUM
+    set_vfn $PF_DEV $VF_NUM
+    attach_vf $PF_DEV $VF_NUM
+fi
+
+exit 0
