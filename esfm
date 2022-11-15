@@ -78,8 +78,8 @@ function msg() {
 #   $2 optional message to print if error occurs (error != 0)
 function err_check()
 {
-    if [ $1 != 0 ]; then
-        if [ -n "$2" ]; then
+    if [ $1 != 0 ] ; then
+        if [ -n "$2" ] ; then
             echo "ERROR $1: $2"
         else
             echo "ERROR $1"
@@ -89,11 +89,12 @@ function err_check()
 }
 
 # ask(question)
-#   Ask a question and wait for y or Y response, exit otherwise
+#   Ask a question and wait for y or Y response and continue, call a function otherwise
 #   $1 question to ask
+#   $2+ function to call (with its arguments) on negative answer, exit() if not provided
 function ask() {
-    if [ $# -ne 1 ] ; then
-        err_check 2 "Invalid parameters ${FUNCNAME[0]}()"
+    if [ $# -lt 1 ] ; then
+        err_check 2 "Invalid parameters to func ${FUNCNAME[0]}()"
     fi
 
     if [ $ASSUME_YES -eq 0 ] ; then
@@ -102,7 +103,14 @@ function ask() {
             read -p "${1} [y/N] " yn
             case $yn in
                 [Yy]* ) break;;
-                * )     echo "Exiting"; exit 0;;
+                * )     if [ $# -gt 1 ] ; then
+                            ${@:2}
+                            break
+                        else
+                            echo "Exiting"
+                            exit 0
+                        fi
+                ;;
             esac
         done
     fi
@@ -219,7 +227,7 @@ function check_vm_num() {
     local min_num_vm=$1
 
     # Check number of VM
-    local num_vm=$(virsh list --all | grep ${VM_BASE_NAME} | wc -l)
+    local num_vm=$(virsh list --all | grep ${VM_BASE_NAME}[0-9]* | wc -l)
 
     # Check enough VM are available
     if [ $num_vm -lt $min_num_vm ] ; then
@@ -232,49 +240,22 @@ function check_vm_num() {
     msg "Found $num_vm VM in the system of $min_num_vm needed"
 }
 
-# wait_vm_on(num_vm)
-#   Wait for all the num_vm VM to be on
-#   $1 num of running vm to wait for
-function wait_vm_on() {
-    if [ $# -ne 1 ] ; then
-        err_check 2 "Invalid parameters to func ${FUNCNAME[0]}()"
-    fi
-    local min_num_vm=$1
-
-    # Check number of VM
-    local num_vm_on=$(virsh list | grep ${VM_BASE_NAME}[0-9]* | wc -l)
-
-    while [ $num_vm_on -lt $min_num_vm ] ; do
-        local vm_diff=$(( min_num_vm - num_vm_on ))
-        read -p "Please start $vm_diff more VM"
-        num_vm_on=$(virsh list | grep ${VM_BASE_NAME} | wc -l)
-    done
-
-    msg "$num_vm_on VMs are on"
-}
-
-# virsh_dev(VM index, attach/detach, VF dev ID)
-#   Attach or detach VF devices to virsh VM
+# virsh_attach(VM index, VF dev ID)
+#   Attach VF device to virsh VM
 #   $1 VM index
-#   $2 0 to detach, otherwise attach
-#   $3 VF device ID
-function virsh_dev() {
-    if [ $# -ne 3 ] ; then
+#   $2 VF device ID
+function virsh_attach() {
+    if [ $# -ne 2 ] ; then
         err_check 2 "Invalid parameters to func ${FUNCNAME[0]}()"
     fi
     local vmi=$1
-    local virsh_opt="detach-device"
-    local vf_dev=$3
+    local vf_dev=$2
 
     local vf_file="${TMP_BASE}${vmi}_${vf_dev#0000:}${TMP_EXT}"
 
     if [ -f $vf_file ] ; then
         msg "It seems that a VF is already attached to VM $vmi, skipping"
         return
-    fi
-
-    if [ $2 -ne 0 ] ; then
-        virsh_opt="attach-device"
     fi
 
 # Write xml configuration file for current VF device to be added to the VM with virsh
@@ -285,8 +266,18 @@ cat << EOF > $vf_file
   </source>
 </hostdev>
 EOF
-    virsh ${virsh_opt} ${VM_BASE_NAME}${vmi} ${vf_file} --live --config > /dev/null
-    #err_check $? "Failed attaching VF $vf_dev to VM ${VM_BASE_NAME}${vmi}"
+
+    local vm_live=""
+    if [ $(virsh list | grep "${VM_BASE_NAME}${vmi}" | grep "running" | wc -l) -eq 1 ] ; then
+        vm_live="--live"
+        msg "Attaching VF ${vf_dev} to live VM ${VM_BASE_NAME}${vmi}"
+    else
+        msg "Attaching VF ${vf_dev} to offline VM ${VM_BASE_NAME}${vmi}"
+    fi
+    virsh attach-device ${VM_BASE_NAME}${vmi} ${vf_file} ${vm_live} --config > /dev/null
+    if [ $? -ne 0 ] ; then
+        ask "Do you want to keep the VF file \"${vf_file}\"?" rm $vf_file
+    fi
 }
 
 # attach_vf(PF dev ID, VF num)
@@ -300,7 +291,7 @@ function attach_vf() {
     local pf_dev=$1
     local num_vf=$2
 
-    if [ $num_vf -eq 0 ]; then
+    if [ $num_vf -eq 0 ] ; then
         return
     fi
 
@@ -317,42 +308,8 @@ function attach_vf() {
         # Unbind VF from its driver
         $QDMA_MANAGER unbind -b ${vf_dev_list[i]} -y ${DRIVER_LOG}
 
-        msg "Attaching VF ${vf_dev_list[i]} to VM ${VM_BASE_NAME}${i}"
-        # virsh_dev(VM index, attach, VF dev id)
-        virsh_dev $i 1 ${vf_dev_list[i]}
-    done
-}
-
-# detach_vf(PF dev ID, VF num)
-#   Detach VF from running VMs
-#   $1 PF device ID
-#   $2 num of VF to detach, -1 to detach all
-function detach_vf() {
-    if [ $# -ne 2 ] ; then
-        err_check 2 "Invalid parameters ${FUNCNAME[0]}()"
-    fi
-    local pf_dev=$1
-    local num_vf=$2
-
-    # Getting DEV LIST of created VFs from their ID
-    local vf_dev_id=$(cat /sys/bus/pci/devices/${pf_dev}/sriov_vf_device)
-    local vf_dev_list=($(lspci -D -d :$vf_dev_id: | cut -d " " -f 1))
-
-    if [ $num_vf -eq -1 ]; then
-        num_vf=${#vf_dev_list[@]}
-    fi
-
-    if [ -z "${vf_dev_list:=""}" ] || [ ${#vf_dev_list[@]} -ne $num_vf ] ; then
-        msg "No VF to detach from $pf_dev"
-        return
-    fi
-
-    # For each VF, detach device
-    for (( i=0; i < $num_vf; i++ ))
-    do
-        msg "Detaching VF ${vf_dev_list[i]} from VM ${VM_BASE_NAME}${i}"
-        # virsh_dev(VM index, detach, VF dev id)
-        virsh_dev $i 0 ${vf_dev_list[i]}
+        # virsh_attach(VM index, VF dev id)
+        virsh_attach $i ${vf_dev_list[i]}
     done
 }
 
@@ -367,15 +324,19 @@ function virsh_detach_all() {
         vmi=$(echo $file | sed -e "s/${TMP_BASE}\([0-9]*\)_.*${TMP_EXT}/\1/")
         vfi=$(echo $file | sed -e "s/${TMP_BASE}[0-9]*_\(.*\)${TMP_EXT}/\1/")
 
-        local vm_find=$(virsh list | grep "${VM_BASE_NAME}${vmi}" | wc -l)
-        if [ $vm_find -eq 1 ] ; then
-            msg "Detaching VF ${vfi} from VM ${VM_BASE_NAME}${vmi}"
-            virsh detach-device ${VM_BASE_NAME}${vmi} ${file} --live --config > /dev/null
+        local vm_live=""
+        if [ $(virsh list | grep "${VM_BASE_NAME}${vmi}" | grep "running" | wc -l) -eq 1 ] ; then
+            vm_live="--live"
+            msg "Detaching VF ${vfi} from live VM ${VM_BASE_NAME}${vmi}"
+        else
+            msg "Detaching VF ${vfi} from offline VM ${VM_BASE_NAME}${vmi}"
+        fi
+        virsh detach-device ${VM_BASE_NAME}${vmi} ${file} ${vm_live} --config > /dev/null
+        if [ $? -eq 0 ] ; then
             rm $file
         else
-            msg "VM ${VM_BASE_NAME}${vmi} is off, skipping"
+            ask "Do you want to keep the VF file \"${file}\"?" rm $file
         fi
-
     done
 }
 
@@ -446,7 +407,10 @@ if [ $QUIET -eq 1 ] ; then
 fi
 
 # Check for a valid VF_NUM
-if [ -z "$VF_NUM" ] ; then
+if [ -z "$VF_NUM" ] ||
+    [[ $VF_NUM != ?(-)+([0-9]) ]] ||
+    [ $VF_NUM -lt 0 ]
+then
     echo "Please provide a valid VF_NUM"
     usage
     exit 1
@@ -476,7 +440,7 @@ if [ $INIT -eq 1 ] && [ $RECONF -eq 0 ] ; then
     remove $PF_DEV
 
     # Also flash bitstream if option is provided
-    if [ -n "$BITFILE" ]; then
+    if [ -n "$BITFILE" ] ; then
         flash_bitstream $BITFILE
     fi
 
@@ -486,19 +450,20 @@ if [ $INIT -eq 1 ] && [ $RECONF -eq 0 ] ; then
 
 elif [ $RECONF -eq 1 ] && [ $INIT -eq 0 ] ; then
 
+    check_vm_num $VF_NUM
+
     # Reconfigure procedure
     rescan
 
     CURR_VF_NUM=$(cat ${DEVICE_PATH}/${PF_DEV}/sriov_numvfs 2> /dev/null)
-    CURRVF_NUM=${CURR_VF_NUM:=0}
-    if [ $CURR_VF_NUM -eq $VF_NUM ]; then
+    if [ $CURR_VF_NUM -eq $VF_NUM ] ; then
         ask "There are already $VF_NUM VF, do you want to continue anyway?"
     fi
 
     virsh_detach_all
 
     # Also flash bitstream if provided
-    if [ -n "$BITFILE" ]; then
+    if [ -n "$BITFILE" ] ; then
         remove $PF_DEV
         flash_bitstream $BITFILE
         rescan
@@ -515,8 +480,7 @@ else
 fi
 
 # Common operations after init or reconf procedures
-if [ $VF_NUM -gt 0 ]; then
-    wait_vm_on $VF_NUM
+if [ $VF_NUM -gt 0 ] ; then
     set_vfn $PF_DEV $VF_NUM
     attach_vf $PF_DEV $VF_NUM
 fi
