@@ -30,7 +30,10 @@ cat <<EOF
 EVEREST SRIOV FPGA manager
 Utility to attach and detach VF to VMs
 
-Usage: $(basename $0) <command> [options]
+Usage: $(basename $0) <pf_dev> <command> [options]
+
+  <pf_dev>                  Pass the PF device ID in the format
+                              DDDD:BB:DD.F Domain:Bus:Device.Function
 
 Available commands:
   init <VF_NUM>             Init PF device with VF_NUM virtual functions and
@@ -39,13 +42,11 @@ Available commands:
                               bitstream if provided). Use 0 to remove all VFs
 
 Available options:
-  -p, --pf_dev <ID>         Define the PF device ID in the format
-                              DDDD:BB:DD.F Domain:Bus:Device.Function
-                              default is $PF_DEV_DEFAULT
   -b, --bitstream <file>    Also flash the provided bitstream file
   -qn, --queues_num <num>   Define number of queues during init, default is $Q_NUM_DEFAULT
   -vm, --vm_names <name>    Define VM base name, VM index will be appended
                               based on VF_NUM, default is $VM_BASE_NAME_DEFAULT
+  -p, --pause               Pause the VF attached to the VMs when removing them
   -h, --help                Print this help and exit
   -q, --quiet               Do not print info messages
   -d, --driver_log          Print driver log info
@@ -84,7 +85,7 @@ function err_check()
         else
             echo "ERROR $1"
         fi
-        rescan
+        rescan $PF_DEV
         exit $1
     fi
 }
@@ -124,6 +125,7 @@ function remove() {
     if [ $# -ne 1 ] ; then
         err_check 2 "Invalid parameters to func ${FUNCNAME[0]}()"
     fi
+    # Remove .F from DEV id
     local pf_dev=${1:0:10}
 
     ask "Are you sure you want to remove $pf_dev?"
@@ -134,13 +136,19 @@ function remove() {
     err_check $? "Failed removing $pf_dev"
 }
 
-# rescan()
+# rescan(PF dev ID)
 #   Rescan PCI bus
 function rescan() {
+    if [ $# -ne 1 ] ; then
+        err_check 2 "Invalid parameters to func ${FUNCNAME[0]}()"
+    fi
+    # Remove .F from DEV id
+    local pf_dev=${1:0:10}
+
     msg "Rescanning PCI bus"
 
     # Call qdma manage script and refresh PCI device list
-    $QDMA_MANAGER rescan -y ${DRIVER_LOG}
+    $QDMA_MANAGER rescan -b $pf_dev -y ${DRIVER_LOG}
     err_check $? "Failed rescanning PCI bus"
 }
 
@@ -193,7 +201,7 @@ function set_queues() {
 
     local num_q_check=$(cat ${DEVICE_PATH}/${pf_dev}/qdma/qmax 2> /dev/null)
     if [ -z "$num_q_check" ] || [ $num_q_check -ne $num_q ] ; then
-        err_check 1 "Failed setting $num_q queues, set ${num_q_check:=0} instead"
+        err_check 1 "Failed setting $num_q queues, set ${num_q_check:-0} instead"
     fi
 }
 
@@ -214,7 +222,7 @@ function set_vfn() {
 
     local num_vf_check=$(cat ${DEVICE_PATH}/${pf_dev}/sriov_numvfs 2> /dev/null)
     if [ -z "$num_vf_check" ] || [ $num_vf_check -ne $num_vf ] ; then
-        err_check 1 "Failed setting $num_vf VFs, set ${num_vf_check:=0} instead"
+        err_check 1 "Failed setting $num_vf VFs, set ${num_vf_check:-0} instead"
     fi
 }
 
@@ -242,7 +250,7 @@ function check_vm_num() {
 }
 
 # virsh_attach(VM index, VF dev ID)
-#   Attach VF device to virsh VM
+#   Attach or unpause VF device to virsh VM
 #   $1 VM index
 #   $2 VF device ID
 function virsh_attach() {
@@ -252,12 +260,23 @@ function virsh_attach() {
     local vmi=$1
     local vf_dev=$2
 
-    local vf_file="${TMP_BASE}${vmi}_${vf_dev#0000:}${TMP_EXT}"
+    local vf_file="${TMP_BASE}${vmi}_${vf_dev}${TMP_EXT}"
 
-    if [ -f $vf_file ] ; then
-        msg "It seems that a VF is already attached to VM $vmi, skipping"
-        return
-    fi
+
+    local vm_live=$(virsh list | grep "${VM_BASE_NAME}${vmi}" | grep "running" | wc -l)
+    if [ $PAUSE -eq 1 ] && [ $vm_live -eq 1 ] && [ -f $vf_file ] ; then
+        msg "Unpausing VF ${vf_dev} of live VM ${VM_BASE_NAME}${vmi}"
+
+        # Bind VF to vfio drivers
+        $QDMA_MANAGER bind-vfio -b ${vf_dev} -y ${DRIVER_LOG}
+
+        # Sending QEMU monitor unpause command
+        virsh qemu-monitor-command ${VM_BASE_NAME}${vmi} --pretty ${QEMU_CMD_UNPAUSE} > /dev/null
+    else
+        if [ -f $vf_file ] ; then
+            msg "It seems that a VF is already attached to VM $vmi, skipping"
+            return
+        fi
 
 # Write xml configuration file for current VF device to be added to the VM with virsh
 cat << EOF > $vf_file
@@ -268,16 +287,17 @@ cat << EOF > $vf_file
 </hostdev>
 EOF
 
-    local vm_live=""
-    if [ $(virsh list | grep "${VM_BASE_NAME}${vmi}" | grep "running" | wc -l) -eq 1 ] ; then
-        vm_live="--live"
-        msg "Attaching VF ${vf_dev} to live VM ${VM_BASE_NAME}${vmi}"
-    else
-        msg "Attaching VF ${vf_dev} to offline VM ${VM_BASE_NAME}${vmi}"
-    fi
-    virsh attach-device ${VM_BASE_NAME}${vmi} ${vf_file} ${vm_live} --config > /dev/null
-    if [ $? -ne 0 ] ; then
-        ask "Do you want to keep the VF file \"${vf_file}\"?" rm $vf_file
+        local live_par=""
+        if [ $vm_live -eq 1 ] ; then
+            live_par="--live"
+            msg "Attaching VF ${vf_dev} to live VM ${VM_BASE_NAME}${vmi}"
+        else
+            msg "Attaching VF ${vf_dev} to offline VM ${VM_BASE_NAME}${vmi}"
+        fi
+        virsh attach-device ${VM_BASE_NAME}${vmi} ${vf_file} ${live_par} --config > /dev/null
+        if [ $? -ne 0 ] ; then
+            ask "Do you want to keep the VF file \"${vf_file}\"?" rm $vf_file
+        fi
     fi
 }
 
@@ -315,7 +335,7 @@ function attach_vf() {
 }
 
 # virsh_detach_all()
-#   Detach all VF devices from virsh VMs
+#   Detach or pause VF devices from virsh VMs
 function virsh_detach_all() {
 
     # For every vm tmp file
@@ -325,18 +345,29 @@ function virsh_detach_all() {
         vmi=$(echo $file | sed -e "s/${TMP_BASE}\([0-9]*\)_.*${TMP_EXT}/\1/")
         vfi=$(echo $file | sed -e "s/${TMP_BASE}[0-9]*_\(.*\)${TMP_EXT}/\1/")
 
-        local vm_live=""
-        if [ $(virsh list | grep "${VM_BASE_NAME}${vmi}" | grep "running" | wc -l) -eq 1 ] ; then
-            vm_live="--live"
-            msg "Detaching VF ${vfi} from live VM ${VM_BASE_NAME}${vmi}"
+        local vm_live=$(virsh list | grep "${VM_BASE_NAME}${vmi}" | grep "running" | wc -l)
+        if [ $PAUSE -eq 1 ] && [ $vm_live -eq 1 ] ; then
+            msg "Pausing VF ${vfi} of live VM ${VM_BASE_NAME}${vmi}"
+
+            # Sending QEMU monitor pause command
+            virsh qemu-monitor-command ${VM_BASE_NAME}${vmi} --pretty ${QEMU_CMD_PAUSE} > /dev/null
+
+            # Unbind VF from its driver
+            $QDMA_MANAGER unbind -b ${vfi} -y ${DRIVER_LOG}
         else
-            msg "Detaching VF ${vfi} from offline VM ${VM_BASE_NAME}${vmi}"
-        fi
-        virsh detach-device ${VM_BASE_NAME}${vmi} ${file} ${vm_live} --config > /dev/null
-        if [ $? -eq 0 ] ; then
-            rm $file
-        else
-            ask "Do you want to keep the VF file \"${file}\"?" rm $file
+            local live_par=""
+            if [ $vm_live -eq 1 ] ; then
+                live_par="--live"
+                msg "Detaching VF ${vfi} from live VM ${VM_BASE_NAME}${vmi}"
+            else
+                msg "Detaching VF ${vfi} from offline VM ${VM_BASE_NAME}${vmi}"
+            fi
+            virsh detach-device ${VM_BASE_NAME}${vmi} ${file} ${live_par} --config > /dev/null
+            if [ $? -eq 0 ] ; then
+                rm $file
+            else
+                ask "Do you want to keep the VF file \"${file}\"?" rm $file
+            fi
         fi
     done
 }
@@ -350,8 +381,9 @@ declare -r PROGRAM_VIVADO="./tools/program_vivado.tcl"
 declare -r DEVICE_PATH="/sys/bus/pci/devices"
 declare -r TMP_EXT=".xml"
 declare -r Q_NUM_DEFAULT=32
-declare -r PF_DEV_DEFAULT="0000:e1:00.0"
 declare -r VM_BASE_NAME_DEFAULT="everestg"
+declare -r QEMU_CMD_PAUSE='{"execute":"device_pause","arguments":{"id":"hostdev0","pause":true}}'
+declare -r QEMU_CMD_UNPAUSE='{"execute":"device_pause","arguments":{"id":"hostdev0","pause":false}}'
 
 # Check scripts manfdatory existance
 if [ ! -f $QDMA_MANAGER ] ; then
@@ -371,12 +403,22 @@ INIT=0
 RECONF=0
 BITFILE=""
 VF_NUM=0
+PAUSE=0
 DRIVER_LOG="-q"
-PF_DEV=$PF_DEV_DEFAULT
 Q_NUM=$Q_NUM_DEFAULT
 VM_BASE_NAME=$VM_BASE_NAME_DEFAULT
 
 # Parse input parameters
+
+# First parameter is always the Physical Function dev id
+PF_DEV=${1-}
+# Check for a valid PF dev ID
+if [[ ! "$PF_DEV" =~ ^[0-9A-Fa-f]{4}\:[0-9A-Fa-f]{2}\:[0-9A-Fa-f]{2}\.[0-7]{1}$ ]] ; then
+    err_check 1 "Invalid PF device ID ${PF_DEV-NULL}, format is DDDD:BB:DD.F"
+fi
+#shift the pf_dev
+shift
+
 while [[ $# -gt 0 ]]
 do
     case ${1-} in
@@ -385,9 +427,9 @@ do
         reconf)                 RECONF=1; VF_NUM=${2-}; shift;;
     # options
         -b | --bitstream)       BITFILE=${2-}; shift ;;
-        -p | --pf_dev)          PF_DEV=${2-}; shift ;;
         -qn | --queues_num)     Q_NUM=${2-}; shift ;;
         -vm | --vm_names)       VM_BASE_NAME=${2-}; shift ;;
+        -p | --pause)           PAUSE=1 ;;
         -q | --quiet)           QUIET=1 ;;
         -d | --driver_log)      DRIVER_LOG="" ;;
         -y | --yes)             ASSUME_YES=1 ;;
@@ -417,13 +459,8 @@ then
     exit 1
 fi
 
-# Check for a valid PF dev ID
-if [[ ! "$PF_DEV" =~ ^[0-9A-Fa-f]{4}\:[0-9A-Fa-f]{2}\:[0-9A-Fa-f]{2}\.[0-7]{1}$ ]] ; then
-    err_check 1 "Invalid PF device ID ${PF_DEV-NULL}, format is DDDD:BB:DD.F"
-fi
-
 # Create name of temp file for current PF after parsing of pf_dev argument
-declare -r TMP_BASE=".${PF_DEV#0000:}_${VM_BASE_NAME}"
+declare -r TMP_BASE=".${PF_DEV}_${VM_BASE_NAME}"
 
 # Check if only one between init and reconf is selected
 if [ $INIT -eq 1 ] && [ $RECONF -eq 0 ] ; then
@@ -435,6 +472,10 @@ if [ $INIT -eq 1 ] && [ $RECONF -eq 0 ] ; then
         msg "It seems like some devices are already attached to some VM"
         msg "Initializing them again could cause inconsistencies on the VMs"
         ask "Do you want to proceed anyway?"
+
+        # Detach all VFs from VMs without pausing them
+        PAUSE=0
+        virsh_detach_all
     fi
 
     check_vm_num $VF_NUM
@@ -445,7 +486,7 @@ if [ $INIT -eq 1 ] && [ $RECONF -eq 0 ] ; then
         flash_bitstream $BITFILE
     fi
 
-    rescan
+    rescan $PF_DEV
 
     set_queues $PF_DEV $Q_NUM
 
@@ -454,7 +495,7 @@ elif [ $RECONF -eq 1 ] && [ $INIT -eq 0 ] ; then
     check_vm_num $VF_NUM
 
     # Reconfigure procedure
-    rescan
+    rescan $PF_DEV
 
     CURR_VF_NUM=$(cat ${DEVICE_PATH}/${PF_DEV}/sriov_numvfs 2> /dev/null)
     if [ ${CURR_VF_NUM:-0} -eq $VF_NUM ] ; then
@@ -467,7 +508,7 @@ elif [ $RECONF -eq 1 ] && [ $INIT -eq 0 ] ; then
     if [ -n "$BITFILE" ] ; then
         remove $PF_DEV
         flash_bitstream $BITFILE
-        rescan
+        rescan $PF_DEV
         set_queues $PF_DEV $Q_NUM
     fi
 
