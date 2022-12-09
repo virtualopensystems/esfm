@@ -84,6 +84,7 @@ function err_check()
         else
             echo "ERROR $1"
         fi
+        rescan
         exit $1
     fi
 }
@@ -456,7 +457,7 @@ elif [ $RECONF -eq 1 ] && [ $INIT -eq 0 ] ; then
     rescan
 
     CURR_VF_NUM=$(cat ${DEVICE_PATH}/${PF_DEV}/sriov_numvfs 2> /dev/null)
-    if [ $CURR_VF_NUM -eq $VF_NUM ] ; then
+    if [ ${CURR_VF_NUM:-0} -eq $VF_NUM ] ; then
         ask "There are already $VF_NUM VF, do you want to continue anyway?"
     fi
 

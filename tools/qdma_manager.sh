@@ -111,16 +111,8 @@ function unbind() {
         return
     fi
 
-    # Get driver name
-    DEV_DRV_NAME=$(basename $DEV_DRV)
-
-    # Check driver name to avoid unbinding unknown drivers
-    if [[ ! "${DRIVERS_LIST[*]}" =~ "${DEV_DRV_NAME}" ]] ; then
-        err_check 1 "Unknown driver $DEV_DRV_NAME"
-    fi
-
-    msg "Unbinding $dev_id from $DEV_DRV_NAME driver"
-    echo "${dev_id}" | sudo tee ${DRIVER_PATH}/${DEV_DRV_NAME}/unbind > /dev/null 2>&1
+    msg "Unbinding $dev_id from $(basename $DEV_DRV) driver"
+    echo "${dev_id}" | sudo tee ${DEVICE_PATH}/${dev_id}/driver/unbind > /dev/null 2>&1
     err_check $? "Failed unbinding $dev_id"
 }
 
