@@ -33,6 +33,7 @@ Usage: $(basename $0) <command> [options]
 
 Available commands:
   unbind                Unbind PCI device from its driver
+  bind-vfio             Bind PCI device to $VFIO_DRV driver
   remove                Unbind and remove PCI devices and their VF
   rescan                Rescan PCI bus for new devices
 
@@ -105,13 +106,13 @@ function unbind() {
     local dev_id=$1
 
     # Check if device is bound to driver, if not return
-    DEV_DRV=$(readlink ${DEVICE_PATH}/${dev_id}/driver)
+    DEV_DRV=$(basename "$(readlink ${DEVICE_PATH}/${dev_id}/driver)")
     if [ -z "$DEV_DRV" ] ; then
-        #msg "DEV $dev_id not bound to any drv"
+        msg "DEV $dev_id not bound to any drv"
         return
     fi
 
-    msg "Unbinding $dev_id from $(basename $DEV_DRV) driver"
+    msg "Unbinding $dev_id from $DEV_DRV driver"
     echo "${dev_id}" | sudo tee ${DEVICE_PATH}/${dev_id}/driver/unbind > /dev/null 2>&1
     err_check $? "Failed unbinding $dev_id"
 }
@@ -141,6 +142,34 @@ function unbind_only() {
     fi
 
     unbind $BASE_DEV
+}
+
+# bind_vfio()
+#   Bind device to $VFIO_DRV
+function bind_vfio() {
+    DEV_LIST=$(get_dev_list)
+    if [ -z "$DEV_LIST" ] ; then
+        msg "WARNING: No device with base id \"${BASE_DEV}\" found!"
+        exit 0
+    fi
+
+    # Check if device is already bound or bound to different driver
+    DEV_DRV=$(basename "$(readlink ${DEVICE_PATH}/${BASE_DEV}/driver)")
+    if [ "$DEV_DRV" == "$VFIO_DRV" ] ; then
+        msg "DEV $BASE_DEV already bound to $VFIO_DRV"
+        return
+    elif [ -n "$DEV_DRV" ] ; then
+        msg "DEV $BASE_DEV bound to $DEV_DRV, unbinding"
+        unbind $BASE_DEV
+    fi
+
+    msg "Binding $BASE_DEV to $VFIO_DRV driver"
+
+    local vfio_id="10ee a03f"
+    echo ${vfio_id} | sudo tee ${DRIVER_PATH}/${VFIO_DRV}/new_id > /dev/null 2>&1
+    echo ${BASE_DEV} | sudo tee ${DRIVER_PATH}/${VFIO_DRV}/bind > /dev/null 2>&1
+    #err_check $? "Failed binding $BASE_DEV to $VFIO_DRV"
+    echo ${vfio_id} | sudo tee ${DRIVER_PATH}/${VFIO_DRV}/remove_id > /dev/null 2>&1
 }
 
 # unbind_remove()
@@ -233,6 +262,7 @@ function rescan() {
 declare -r DRIVERS_LIST=("qdma-pf" "qdma-vf" "vfio-pci" "xclmgmt")
 declare -r DRIVER_PATH="/sys/bus/pci/drivers"
 declare -r DEVICE_PATH="/sys/bus/pci/devices"
+declare -r VFIO_DRV="vfio-pci"
 BASE_DEV_DEFAULT="0000:e1:00"
 
 # Default parameters
@@ -240,6 +270,7 @@ BASE_DEV=$BASE_DEV_DEFAULT
 REMOVE=0
 RESCAN=0
 UNBIND=0
+BINDVFIO=0
 QUIET=0
 ASSUME_YES=0
 
@@ -256,6 +287,7 @@ do
         -y | --yes)         ASSUME_YES=1 ;;
         -b | --base_dev)    BASE_DEV=${2-}; shift;;
         unbind)             UNBIND=1 ;;
+        bind-vfio)          BINDVFIO=1;;
         remove)             REMOVE=1 ;;
         rescan)             RESCAN=1 ;;
         *)
@@ -267,24 +299,33 @@ do
     shift
 done
 
-# Check if only one between remove and rescan is selected
+# Check if only one between unbind, bind-vfio, remove and rescan is selected
 if [ $UNBIND -eq 1 ] &&
+    [ $BINDVFIO -eq 0 ] &&
     [ $REMOVE -eq 0 ] &&
     [ $RESCAN -eq 0 ]
 then
     unbind_only
 elif [ $UNBIND -eq 0 ] &&
+    [ $BINDVFIO -eq 1 ] &&
+    [ $REMOVE -eq 0 ] &&
+    [ $RESCAN -eq 0 ]
+then
+    bind_vfio
+elif [ $UNBIND -eq 0 ] &&
+    [ $BINDVFIO -eq 0 ] &&
     [ $REMOVE -eq 1 ] &&
     [ $RESCAN -eq 0 ]
 then
     unbind_remove
 elif [ $UNBIND -eq 0 ] &&
+    [ $BINDVFIO -eq 0 ] &&
     [ $REMOVE -eq 0 ] &&
     [ $RESCAN -eq 1 ]
 then
     rescan
 else
-    echo "Error: Select unbind OR remove OR rescan option!"
+    echo "Error: Select only one option!"
     usage
     exit 1
 fi
