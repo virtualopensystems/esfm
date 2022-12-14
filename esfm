@@ -91,11 +91,10 @@ function err_check()
 }
 
 # ask(question)
-#   Ask a question and wait for y or Y response and continue, call a function otherwise
+#   Ask a question and wait for y or Y response to continue, exit otherwise
 #   $1 question to ask
-#   $2+ function to call (with its arguments) on negative answer, exit() if not provided
 function ask() {
-    if [ $# -lt 1 ] ; then
+    if [ $# -ne 1 ] ; then
         err_check 2 "Invalid parameters to func ${FUNCNAME[0]}()"
     fi
 
@@ -105,14 +104,32 @@ function ask() {
             read -p "${1} [y/N] " yn
             case $yn in
                 [Yy]* ) break;;
-                * )     if [ $# -gt 1 ] ; then
-                            ${@:2}
-                            break
-                        else
-                            echo "Exiting"
-                            exit 0
+                * )     echo "Exiting"; exit 0;;
+            esac
+        done
+    fi
+}
+
+# ask_yes(question, action ... )
+#   Ask a question and call a function if yes
+#   $1 question to ask
+#   $2+ function to call (with its arguments) on positive answer, do nothing otherwise
+#   NOTE: assume yes actually ignores the action (it is assume no in this case)
+function ask_yes() {
+    if [ $# -lt 1 ] ; then
+        err_check 2 "Invalid parameters to func ${FUNCNAME[0]}()"
+    fi
+
+    if [ $ASSUME_YES -eq 0 ] ; then
+        # Ask to remove
+        while true; do
+            read -p "${1} [y/N] " yn
+            case $yn in
+                [Yy]* ) if [ $# -gt 1 ] ; then
+                            ${@:2};
                         fi
-                ;;
+                        break;;
+                * )     break;;
             esac
         done
     fi
@@ -296,7 +313,7 @@ EOF
         fi
         virsh attach-device ${VM_BASE_NAME}${vmi} ${vf_file} ${live_par} --config > /dev/null
         if [ $? -ne 0 ] ; then
-            ask "Do you want to keep the VF file \"${vf_file}\"?" rm $vf_file
+            ask_yes "Do you want to remove the VF file \"${vf_file}\"?" rm $vf_file
         fi
     fi
 }
@@ -366,7 +383,7 @@ function virsh_detach_all() {
             if [ $? -eq 0 ] ; then
                 rm $file
             else
-                ask "Do you want to keep the VF file \"${file}\"?" rm $file
+                ask_yes "Do you want to remove the VF file \"${file}\"?" rm $file
             fi
         fi
     done
@@ -469,9 +486,8 @@ if [ $INIT -eq 1 ] && [ $RECONF -eq 0 ] ; then
     # If tmp files are present, VF were assigned to VM but not detached
     TMP_FILES=$(ls ${TMP_BASE}[0-9]*.*${TMP_EXT} 2> /dev/null)
     if [ -n "$TMP_FILES" ] ; then
-        msg "It seems like some devices are already attached to some VM"
-        msg "Initializing them again could cause inconsistencies on the VMs"
-        ask "Do you want to proceed anyway?"
+        msg "It seems like some devices are attached to some VM"
+        ask "They will be reset. Do you whish to proceed anyway?"
 
         # Detach all VFs from VMs without pausing them
         PAUSE=0
