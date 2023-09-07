@@ -8,13 +8,13 @@
 # Author      : STEFANO CIRICI <s.cirici@virtualopensystems.com>
 # Description : This file composes the EVEREST SRIOV FPGA Manager
 #               functionalities allowing to initialize and control the Virtual
-#               Functions to VM association (attach and detach) in a libvirt
-#               KVM/QEMU VMM.
+#               Functions to VM association (attach, detach and pause) in a
+#               libvirt QEMU/KVM VMM.
 ################################################################################
 
 # Fail fast
 set -E
-#set -e  # check if command fail, disabled for using err_check
+#set -e  # check if command fails, disabled for using err_check
 set -u
 set -o pipefail
 
@@ -74,7 +74,7 @@ function msg() {
 }
 
 # err_check(ERR code, ERR msg)
-#   Check error code, eventually printing the message, and exit if error
+#   Check error code, eventually print the message, and exit if error
 #   $1 error code, 0 if no error
 #   $2 optional message to print if error occurs (error != 0)
 function err_check()
@@ -114,7 +114,7 @@ function ask() {
 #   Ask a question and call a function if yes
 #   $1 question to ask
 #   $2+ function to call (with its arguments) on positive answer, do nothing otherwise
-#   NOTE: assume yes actually ignores the action (it is assume no in this case)
+#   NOTE: assume yes actually ignores the action (it is assumed no in this case)
 function ask_yes() {
     if [ $# -lt 1 ] ; then
         err_check 2 "Invalid parameters to func ${FUNCNAME[0]}()"
@@ -334,7 +334,7 @@ function attach_vf() {
     fi
 
     # Getting DEV LIST of created VFs from their ID
-    local vf_dev_id=$(cat /sys/bus/pci/devices/${pf_dev}/sriov_vf_device)
+    local vf_dev_id=$(cat ${DEVICE_PATH}/${pf_dev}/sriov_vf_device)
     local vf_dev_list=($(lspci -D -d :$vf_dev_id: | cut -d " " -f 1))
     if [ -z "${vf_dev_list:=""}" ] || [ ${#vf_dev_list[@]} -ne $num_vf ] ; then
         err_check 1 "Failed getting VF devices of $pf_dev"
@@ -402,7 +402,7 @@ declare -r VM_BASE_NAME_DEFAULT="everestg"
 declare -r QEMU_CMD_PAUSE='{"execute":"device_pause","arguments":{"id":"hostdev0","pause":true}}'
 declare -r QEMU_CMD_UNPAUSE='{"execute":"device_pause","arguments":{"id":"hostdev0","pause":false}}'
 
-# Check scripts manfdatory existance
+# Check availability of scripts
 if [ ! -f $QDMA_MANAGER ] ; then
     err_check 2 "Missing QDMA manager script"
 fi
@@ -479,22 +479,24 @@ fi
 # Create name of temp file for current PF after parsing of pf_dev argument
 declare -r TMP_BASE=".${PF_DEV}_${VM_BASE_NAME}"
 
+# Check if the number of VM is enough for the requested VF
+#check_vm_num $VF_NUM
+
 # Check if only one between init and reconf is selected
 if [ $INIT -eq 1 ] && [ $RECONF -eq 0 ] ; then
-    # Init procedue
+    # Init procedure
 
     # If tmp files are present, VF were assigned to VM but not detached
     TMP_FILES=$(ls ${TMP_BASE}[0-9]*.*${TMP_EXT} 2> /dev/null)
     if [ -n "$TMP_FILES" ] ; then
         msg "It seems like some devices are attached to some VM"
-        ask "They will be reset. Do you whish to proceed anyway?"
+        ask "They will be reset. Do you wish to proceed anyway?"
 
         # Detach all VFs from VMs without pausing them
         PAUSE=0
         virsh_detach_all
     fi
 
-    check_vm_num $VF_NUM
     remove $PF_DEV
 
     # Also flash bitstream if option is provided
@@ -507,8 +509,6 @@ if [ $INIT -eq 1 ] && [ $RECONF -eq 0 ] ; then
     set_queues $PF_DEV $Q_NUM
 
 elif [ $RECONF -eq 1 ] && [ $INIT -eq 0 ] ; then
-
-    check_vm_num $VF_NUM
 
     # Reconfigure procedure
     rescan $PF_DEV
