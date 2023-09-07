@@ -429,6 +429,13 @@ VM_BASE_NAME=$VM_BASE_NAME_DEFAULT
 
 # First parameter is always the Physical Function dev id
 PF_DEV=${1-}
+
+# If help, print usage
+if [ "$PF_DEV" == "-h" ] || [ "$PF_DEV" == "--help" ] ; then
+    usage
+    exit 0
+fi
+
 # Check for a valid PF dev ID
 if [[ ! "$PF_DEV" =~ ^[0-9A-Fa-f]{4}\:[0-9A-Fa-f]{2}\:[0-9A-Fa-f]{2}\.[0-7]{1}$ ]] ; then
     err_check 1 "Invalid PF device ID ${PF_DEV-NULL}, format is DDDD:BB:DD.F"
