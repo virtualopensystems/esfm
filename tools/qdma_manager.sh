@@ -274,9 +274,6 @@ BINDVFIO=0
 QUIET=0
 ASSUME_YES=0
 
-# Check if run as root, disabled: run single commands with sudo
-#check_root
-
 # Parse input parameters
 while [[ $# -gt 0 ]]
 do
