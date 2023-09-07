@@ -1,0 +1,156 @@
+
+
+================================================================
+== Vitis HLS Report for 'compute_1_Pipeline_VITIS_LOOP_90_4'
+================================================================
+* Date:           Wed Dec 14 18:56:35 2022
+
+* Version:        2022.1 (Build 3526262 on Mon Apr 18 15:47:01 MDT 2022)
+* Project:        krnl_helm
+* Solution:       solution (Vitis Kernel Flow Target)
+* Product family: virtexuplus
+* Target device:  xcu55c-fsvh2892-2L-e
+
+
+================================================================
+== Performance Estimates
+================================================================
++ Timing: 
+    * Summary: 
+    +--------+---------+----------+------------+
+    |  Clock |  Target | Estimated| Uncertainty|
+    +--------+---------+----------+------------+
+    |ap_clk  |  4.44 ns|  2.852 ns|     1.20 ns|
+    +--------+---------+----------+------------+
+
++ Latency: 
+    * Summary: 
+    +---------+---------+----------+----------+------+------+---------+
+    |  Latency (cycles) |  Latency (absolute) |   Interval  | Pipeline|
+    |   min   |   max   |    min   |    max   |  min |  max |   Type  |
+    +---------+---------+----------+----------+------+------+---------+
+    |     1333|     1333|  5.924 us|  5.924 us|  1333|  1333|       no|
+    +---------+---------+----------+----------+------+------+---------+
+
+    + Detail: 
+        * Instance: 
+        N/A
+
+        * Loop: 
+        +-------------------+---------+---------+----------+-----------+-----------+------+----------+
+        |                   |  Latency (cycles) | Iteration|  Initiation Interval  | Trip |          |
+        |     Loop Name     |   min   |   max   |  Latency |  achieved |   target  | Count| Pipelined|
+        +-------------------+---------+---------+----------+-----------+-----------+------+----------+
+        |- VITIS_LOOP_90_4  |     1331|     1331|         2|          1|          1|  1331|       yes|
+        +-------------------+---------+---------+----------+-----------+-----------+------+----------+
+
+
+
+================================================================
+== Utilization Estimates
+================================================================
+* Summary: 
++---------------------+---------+------+---------+---------+-----+
+|         Name        | BRAM_18K|  DSP |    FF   |   LUT   | URAM|
++---------------------+---------+------+---------+---------+-----+
+|DSP                  |        -|     -|        -|        -|    -|
+|Expression           |        -|     -|        0|       41|    -|
+|FIFO                 |        -|     -|        -|        -|    -|
+|Instance             |        -|     -|        -|        -|    -|
+|Memory               |        -|     -|        -|        -|    -|
+|Multiplexer          |        -|     -|        -|       45|    -|
+|Register             |        -|     -|       14|        -|    -|
++---------------------+---------+------+---------+---------+-----+
+|Total                |        0|     0|       14|       86|    0|
++---------------------+---------+------+---------+---------+-----+
+|Available SLR        |     1344|  3008|   869120|   434560|  320|
++---------------------+---------+------+---------+---------+-----+
+|Utilization SLR (%)  |        0|     0|       ~0|       ~0|    0|
++---------------------+---------+------+---------+---------+-----+
+|Available            |     4032|  9024|  2607360|  1303680|  960|
++---------------------+---------+------+---------+---------+-----+
+|Utilization (%)      |        0|     0|       ~0|       ~0|    0|
++---------------------+---------+------+---------+---------+-----+
+
++ Detail: 
+    * Instance: 
+    N/A
+
+    * DSP: 
+    N/A
+
+    * Memory: 
+    N/A
+
+    * FIFO: 
+    N/A
+
+    * Expression: 
+    +---------------------------+----------+----+---+----+------------+------------+
+    |       Variable Name       | Operation| DSP| FF| LUT| Bitwidth P0| Bitwidth P1|
+    +---------------------------+----------+----+---+----+------------+------------+
+    |add_ln90_fu_74_p2          |         +|   0|  0|  18|          11|           1|
+    |ap_block_pp0_stage0_01001  |       and|   0|  0|   2|           1|           1|
+    |ap_ext_blocking_n          |       and|   0|  0|   2|           2|           2|
+    |ap_int_blocking_cur_n      |       and|   0|  0|   2|           1|           0|
+    |ap_int_blocking_n          |       and|   0|  0|   2|           1|           2|
+    |ap_str_blocking_n          |       and|   0|  0|   2|           2|           2|
+    |icmp_ln90_fu_68_p2         |      icmp|   0|  0|  11|          11|          11|
+    |ap_enable_pp0              |       xor|   0|  0|   2|           1|           2|
+    +---------------------------+----------+----+---+----+------------+------------+
+    |Total                      |          |   0|  0|  41|          30|          21|
+    +---------------------------+----------+----+---+----+------------+------------+
+
+    * Multiplexer: 
+    +-------------------------+----+-----------+-----+-----------+
+    |           Name          | LUT| Input Size| Bits| Total Bits|
+    +-------------------------+----+-----------+-----+-----------+
+    |ap_done_int              |   9|          2|    1|          2|
+    |ap_enable_reg_pp0_iter1  |   9|          2|    1|          2|
+    |ap_sig_allocacmp_i_1     |   9|          2|   11|         22|
+    |i_fu_36                  |   9|          2|   11|         22|
+    |v0_buf7_blk_n            |   9|          2|    1|          2|
+    +-------------------------+----+-----------+-----+-----------+
+    |Total                    |  45|         10|   25|         50|
+    +-------------------------+----+-----------+-----+-----------+
+
+    * Register: 
+    +-------------------------+----+----+-----+-----------+
+    |           Name          | FF | LUT| Bits| Const Bits|
+    +-------------------------+----+----+-----+-----------+
+    |ap_CS_fsm                |   1|   0|    1|          0|
+    |ap_done_reg              |   1|   0|    1|          0|
+    |ap_enable_reg_pp0_iter1  |   1|   0|    1|          0|
+    |i_fu_36                  |  11|   0|   11|          0|
+    +-------------------------+----+----+-----+-----------+
+    |Total                    |  14|   0|   14|          0|
+    +-------------------------+----+----+-----+-----------+
+
+
+
+================================================================
+== Interface
+================================================================
+* Summary: 
++------------------------+-----+-----+------------+------------------------------------+--------------+
+|        RTL Ports       | Dir | Bits|  Protocol  |            Source Object           |    C Type    |
++------------------------+-----+-----+------------+------------------------------------+--------------+
+|ap_clk                  |   in|    1|  ap_ctrl_hs|  compute.1_Pipeline_VITIS_LOOP_90_4|  return value|
+|ap_rst                  |   in|    1|  ap_ctrl_hs|  compute.1_Pipeline_VITIS_LOOP_90_4|  return value|
+|ap_start                |   in|    1|  ap_ctrl_hs|  compute.1_Pipeline_VITIS_LOOP_90_4|  return value|
+|ap_done                 |  out|    1|  ap_ctrl_hs|  compute.1_Pipeline_VITIS_LOOP_90_4|  return value|
+|ap_idle                 |  out|    1|  ap_ctrl_hs|  compute.1_Pipeline_VITIS_LOOP_90_4|  return value|
+|ap_ready                |  out|    1|  ap_ctrl_hs|  compute.1_Pipeline_VITIS_LOOP_90_4|  return value|
+|ap_ext_blocking_n       |  out|    1|  ap_ctrl_hs|  compute.1_Pipeline_VITIS_LOOP_90_4|  return value|
+|ap_str_blocking_n       |  out|    1|  ap_ctrl_hs|  compute.1_Pipeline_VITIS_LOOP_90_4|  return value|
+|ap_int_blocking_n       |  out|    1|  ap_ctrl_hs|  compute.1_Pipeline_VITIS_LOOP_90_4|  return value|
+|v0_buf7_din             |  out|   64|     ap_fifo|                             v0_buf7|       pointer|
+|v0_buf7_num_data_valid  |   in|   12|     ap_fifo|                             v0_buf7|       pointer|
+|v0_buf7_fifo_cap        |   in|   12|     ap_fifo|                             v0_buf7|       pointer|
+|v0_buf7_full_n          |   in|    1|     ap_fifo|                             v0_buf7|       pointer|
+|v0_buf7_write           |  out|    1|     ap_fifo|                             v0_buf7|       pointer|
+|v_buf_address0          |  out|   11|   ap_memory|                               v_buf|         array|
+|v_buf_ce0               |  out|    1|   ap_memory|                               v_buf|         array|
+|v_buf_q0                |   in|   64|   ap_memory|                               v_buf|         array|
++------------------------+-----+-----+------------+------------------------------------+--------------+
+
