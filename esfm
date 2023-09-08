@@ -85,7 +85,6 @@ function err_check()
         else
             echo "ERROR $1"
         fi
-        rescan $PF_DEV
         exit $1
     fi
 }
