@@ -61,7 +61,7 @@ function interr() {
     trap - SIGINT SIGQUIT
     echo
     echo "Process interrupted"
-    exit 2
+    exit 4 #EINTR
 }
 
 # msg(message string)
@@ -260,7 +260,7 @@ function check_vm_num() {
         msg "You can clone them using:"
         msg "  $ virt-clone --original ${VM_BASE_NAME}0 --name ${VM_BASE_NAME}<VM#> --auto-clone"
         msg "or reduce the number of VF to $num_vm"
-        exit 0
+        exit 22 #EINVAL
     fi
     msg "Found $num_vm VM in the system of $min_num_vm needed"
 }
@@ -426,20 +426,19 @@ VM_BASE_NAME=$VM_BASE_NAME_DEFAULT
 
 # Parse input parameters
 
-# First parameter is always the Physical Function dev id
-PF_DEV=${1-}
-
 # If help, print usage
-if [ "$PF_DEV" == "-h" ] || [ "$PF_DEV" == "--help" ] ; then
+if [ "$1" == "-h" ] || [ "$1" == "--help" ] ; then
     usage
     exit 0
 fi
 
+# First parameter is always the Physical Function dev id
+PF_DEV=${1-}
 # Check for a valid PF dev ID
 if [[ ! "$PF_DEV" =~ ^[0-9A-Fa-f]{4}\:[0-9A-Fa-f]{2}\:[0-9A-Fa-f]{2}\.[0-7]{1}$ ]] ; then
     err_check 1 "Invalid PF device ID ${PF_DEV-NULL}, format is DDDD:BB:DD.F"
 fi
-#shift the pf_dev
+#shift the PF_DEV
 shift
 
 while [[ $# -gt 0 ]]
@@ -461,7 +460,7 @@ do
         *)
                                 echo "Unknown option: ${1}"
                                 usage
-                                exit 1
+                                exit 22 #EINVAL
                                 ;;
     esac
     shift
@@ -473,20 +472,25 @@ if [ $QUIET -eq 1 ] ; then
 fi
 
 # Check for a valid VF_NUM
+max_num_vf=$(cat ${DEVICE_PATH}/${PF_DEV}/sriov_totalvfs 2> /dev/null)
 if [ -z "$VF_NUM" ] ||
     [[ $VF_NUM != ?(-)+([0-9]) ]] ||
     [ $VF_NUM -lt 0 ]
 then
     echo "Please provide a valid VF_NUM"
     usage
-    exit 1
+    exit 22 #EINVAL
+elif [ $VF_NUM -gt $max_num_vf ]
+then
+    echo "ERROR: VF count ($VF_NUM) exceeds device limit ($max_num_vf). "
+    exit 22 #EINVAL
 fi
 
 # Create name of temp file for current PF after parsing of pf_dev argument
 declare -r TMP_BASE=".${PF_DEV}_${VM_BASE_NAME}"
 
 # Check if the number of VM is enough for the requested VF
-#check_vm_num $VF_NUM
+check_vm_num $VF_NUM
 
 # Check if only one between init and reconf is selected
 if [ $INIT -eq 1 ] && [ $RECONF -eq 0 ] ; then
@@ -538,9 +542,9 @@ elif [ $RECONF -eq 1 ] && [ $INIT -eq 0 ] ; then
     set_vfn $PF_DEV 0
 
 else
-    echo "Error: Select init OR reconf option!"
+    echo "ERROR: Select init OR reconf option!"
     usage
-    exit 1
+    exit 22
 fi
 
 # Common operations after init or reconf procedures
