@@ -391,9 +391,10 @@ function virsh_detach_all() {
 ################################################################################
 
 # Constant parameters
-declare -r QDMA_MANAGER="./tools/qdma_manager.sh"
-declare -r PROGRAM_XSCT="./tools/program_xsct.tcl"
-declare -r PROGRAM_VIVADO="./tools/program_vivado.tcl"
+declare -r SCRIPT_DIR="$(pwd)"
+declare -r QDMA_MANAGER="${SCRIPT_DIR}/tools/qdma_manager.sh"
+declare -r PROGRAM_XSCT="${SCRIPT_DIR}/tools/program_xsct.tcl"
+declare -r PROGRAM_VIVADO="${SCRIPT_DIR}/tools/program_vivado.tcl"
 declare -r DEVICE_PATH="/sys/bus/pci/devices"
 declare -r TMP_EXT=".xml"
 declare -r Q_NUM_DEFAULT=32
@@ -427,7 +428,7 @@ VM_BASE_NAME=$VM_BASE_NAME_DEFAULT
 # Parse input parameters
 
 # If help, print usage
-if [ "$1" == "-h" ] || [ "$1" == "--help" ] ; then
+if [ $# -eq 0 ] || ["$1" == "-h" ] || [ "$1" == "--help" ] ; then
     usage
     exit 0
 fi
