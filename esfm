@@ -252,17 +252,34 @@ function check_vm_num() {
     local min_num_vm=$1
 
     # Check number of VM
-    local num_vm=$(virsh list --all | grep ${VM_BASE_NAME}[0-9]* | wc -l)
+    local num_vm=$(virsh list --all | awk '{print $2}'| grep -v Name | wc -l)
 
     # Check enough VM are available
     if [ $num_vm -lt $min_num_vm ] ; then
         msg "You have $num_vm VM but $min_num_vm are required"
         msg "You can clone them using:"
-        msg "  $ virt-clone --original ${VM_BASE_NAME}0 --name ${VM_BASE_NAME}<VM#> --auto-clone"
+        msg "  $ virt-clone --original ${vm_name}0 --name ${vm_name}<VM#> --auto-clone"
         msg "or reduce the number of VF to $num_vm"
         exit 22 #EINVAL
     fi
     msg "Found $num_vm VM in the system of $min_num_vm needed"
+}
+
+# check_vm_exist(vm name)
+#   Check if the VM vm_name exists
+#   $1 VM_NAME
+function check_vm_exist() {
+    if [ $# -ne 1 ] ; then
+        err_check 2 "Invalid parameters to func ${FUNCNAME[0]}()"
+    fi
+
+    local vm_name=$1
+
+    virst list --all | grep ${vm_name}
+    let ret=$?
+    if [ $ret -ne 0 ]; then
+        err_check $ret "VM $name does not exist"
+    fi
 }
 
 # virsh_attach(VM index, VF dev ID)
