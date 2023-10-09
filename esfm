@@ -520,6 +520,11 @@ if [ $INIT -eq 1 ] && [ $RECONF -eq 0 ] ; then
 
     set_queues $PF_DEV $Q_NUM
 
+    # Common operations after init or reconf procedures
+    if [ $VF_NUM -gt 0 ] ; then
+        set_vfn $PF_DEV $VF_NUM
+    fi
+
 elif [ $RECONF -eq 1 ] && [ $INIT -eq 0 ] ; then
 
     # Reconfigure procedure
@@ -543,16 +548,16 @@ elif [ $RECONF -eq 1 ] && [ $INIT -eq 0 ] ; then
     # Need to reset VF num before changing it
     set_vfn $PF_DEV 0
 
+    if [ $VF_NUM -gt 0 ] ; then
+        set_vfn $PF_DEV $VF_NUM
+        attach_vf $PF_DEV $VF_NUM
+    fi
+
 else
     echo "ERROR: Select init OR reconf option!"
     usage
     exit 22
 fi
 
-# Common operations after init or reconf procedures
-if [ $VF_NUM -gt 0 ] ; then
-    set_vfn $PF_DEV $VF_NUM
-    attach_vf $PF_DEV $VF_NUM
-fi
 
 exit 0
