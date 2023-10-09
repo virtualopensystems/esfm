@@ -44,8 +44,6 @@ Available commands:
 Available options:
   -b, --bitstream <file>    Also flash the provided bitstream file
   -qn, --queues_num <num>   Define number of queues during init, default is $Q_NUM_DEFAULT
-  -vm, --vm_names <name>    Define VM base name, VM index will be appended
-                              based on VF_NUM, default is $VM_BASE_NAME_DEFAULT
   -p, --pause               Pause the VF attached to the VMs when removing them
   -h, --help                Print this help and exit
   -q, --quiet               Do not print info messages
@@ -378,9 +376,20 @@ function virsh_detach_all() {
         vm_name=$(echo $file | sed -e "s/${TMP_BASE}_.*${TMP_EXT}/\1/")
         vfi=$(echo $file | sed -e "s/${TMP_BASE}_\(.*\)${TMP_EXT}/\1/")
 
-        local vm_live=$(virsh list | grep "${vm_name}" | grep "running" | wc -l)
-        if [ $PAUSE -eq 1 ] && [ $vm_live -eq 1 ] ; then
-            msg "Pausing VF ${vfi} of live VM ${VM_BASE_NAME}${vmi}"
+        virsh_detach vm_name vfi
+
+    done
+}
+
+# virsh_detach
+#   $1 VM name
+#   $2 VF device ID
+function virsh_detach() {
+    vm_name=$1
+    vfi=$2
+    local vm_live=$(virsh list | grep "${vm_name}" | grep "running" | wc -l)
+    if [ $PAUSE -eq 1 ] && [ $vm_live -eq 1 ] ; then
+        msg "Pausing VF ${vfi} of live VM ${vm_name}"
 
             # Sending QEMU monitor pause command
             virsh qemu-monitor-command ${vm_name} --pretty ${QEMU_CMD_PAUSE} > /dev/null
@@ -401,10 +410,8 @@ function virsh_detach_all() {
             else
                 ask_yes "Do you want to remove the VF file \"${file}\"?" rm $file
             fi
-        fi
-    done
+    fi
 }
-
 ################################################################################
 
 # Constant parameters
@@ -415,7 +422,6 @@ declare -r PROGRAM_VIVADO="${SCRIPT_DIR}/tools/program_vivado.tcl"
 declare -r DEVICE_PATH="/sys/bus/pci/devices"
 declare -r TMP_EXT=".xml"
 declare -r Q_NUM_DEFAULT=32
-declare -r VM_BASE_NAME_DEFAULT="everestg"
 declare -r QEMU_CMD_PAUSE='{"execute":"device_pause","arguments":{"id":"hostdev0","pause":true}}'
 declare -r QEMU_CMD_UNPAUSE='{"execute":"device_pause","arguments":{"id":"hostdev0","pause":false}}'
 
@@ -440,7 +446,6 @@ VF_NUM=0
 PAUSE=0
 DRIVER_LOG="-q"
 Q_NUM=$Q_NUM_DEFAULT
-VM_BASE_NAME=$VM_BASE_NAME_DEFAULT
 
 # Parse input parameters
 
@@ -568,6 +573,18 @@ elif [ $RECONF -eq 1 ] && [ $INIT -eq 0 ] ; then
     if [ $VF_NUM -gt 0 ] ; then
         set_vfn $PF_DEV $VF_NUM
         attach_vf $PF_DEV $VF_NUM
+    fi
+
+elif [ $ATTACH -eq 1 ] && [ $DETACH -eq 0 ] && [ $RECONF -eq 0 ] && [ $INIT -eq 0 ] ; then
+
+    if [ $VF_NUM -gt 0 ] ; then
+        virsh_attach $VF_NAME $VF_NUM
+    fi
+
+elif [ $DETACH -eq 1 ] && [ $ATTACH -eq 0 ] && [ $RECONF -eq 0 ] && [ $INIT -eq 0 ] ; then
+
+    if [ $VF_NUM -gt 0 ] ; then
+        virsh_detach $VF_NAME $VF_NUM
     fi
 
 else
