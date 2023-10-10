@@ -470,8 +470,8 @@ do
     # commands
         init)                   INIT=1; VF_NUM=${2-}; shift ;;
         reconf)                 RECONF=1; VF_NUM=${2-}; shift;;
-        attach)                 ATTACH=2; VF_NUM=${2-}; VM_NAME=${2-}; shift;;
-        detach)                 DETACH=2; VF_NUM=${2-}; VM_NAME=${2-}; shift;;
+        attach)                 ATTACH=2; VF_NUM=${2-}; VM_NAME=${3-}; shift;;
+        detach)                 DETACH=2; VF_NUM=${2-}; VM_NAME=${3-}; shift;;
     # options
         -b | --bitstream)       BITFILE=${2-}; shift ;;
         -qn | --queues_num)     Q_NUM=${2-}; shift ;;
