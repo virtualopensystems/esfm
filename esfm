@@ -366,10 +366,10 @@ function virsh_detach_all() {
     for file in $(ls ${TMP_BASE}*${TMP_EXT} 2> /dev/null) ; do
         # Extract VM index and VF id
         # format of file name is PFID_VMName_VFID.extension
-        vm_name=$(echo $file | sed -e "s/${TMP_BASE}\(.*\)_.*${TMP_EXT}/\1/")
-        vfid=$(echo $file | sed -e "s/${TMP_BASE}.*_\(.*\)${TMP_EXT}/\1/")
+        local vm_name=$(echo $file | sed -e "s/${TMP_BASE}\(.*\)_.*${TMP_EXT}/\1/")
+        local vf_dev=$(echo $file | sed -e "s/${TMP_BASE}.*_\(.*\)${TMP_EXT}/\1/")
 
-        virsh_detach ${vm_name} ${vfid}
+        virsh_detach ${vm_name} ${vf_dev}
     done
 }
 
@@ -377,30 +377,30 @@ function virsh_detach_all() {
 #   $1 VM name
 #   $2 VF device ID
 function virsh_detach() {
-    vm_name=$1
-    vfid=$2
+    local vm_name=$1
+    local vf_dev=$2
 
-    local file=$(ls ${TMP_BASE}${vm_name}_${vfid}.xml 2> /dev/null)
+    local file=$(ls ${TMP_BASE}${vm_name}_${vf_dev}.xml 2> /dev/null)
     if [ -z "$file" ] ; then
         err_check 2 "Failed finding configuration file for vm ${vm_name}"
     fi
 
     local vm_live=$(virsh list | grep "${vm_name}" | grep "running" | wc -l)
     if [ $PAUSE -eq 1 ] && [ $vm_live -eq 1 ] ; then
-        msg "Pausing VF ${vfid} of live VM ${vm_name}"
+        msg "Pausing VF ${vf_dev} of live VM ${vm_name}"
 
             # Sending QEMU monitor pause command
             virsh qemu-monitor-command ${vm_name} --pretty ${QEMU_CMD_PAUSE} > /dev/null
 
             # Unbind VF from its driver
-            $QDMA_MANAGER unbind -b ${vfid} -y ${DRIVER_LOG}
+            $QDMA_MANAGER unbind -b ${vf_dev} -y ${DRIVER_LOG}
         else
             local live_par=""
             if [ $vm_live -eq 1 ] ; then
                 live_par="--live"
-                msg "Detaching VF ${vfid} from live VM ${vm_name}"
+                msg "Detaching VF ${vf_dev} from live VM ${vm_name}"
             else
-                msg "Detaching VF ${vfid} from offline VM ${vm_name}"
+                msg "Detaching VF ${vf_dev} from offline VM ${vm_name}"
             fi
 
             virsh detach-device ${vm_name} ${file} ${live_par} --config > /dev/null
