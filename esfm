@@ -43,7 +43,7 @@ Available commands:
 
   attach <VF_IDX> <VM_NAME> Attach VF_IDX to VM_NAME
 
-  detach <VF_IDX> <VM_NAME> Detach VF_IDX from VM_NAME
+  detach <VF_IDX>           Detach VF_IDX from the VM it is attached to
 
   list_vfs                  List VF for a given PF
 
@@ -301,8 +301,10 @@ function check_vm_exist() {
     fi
     local vm_name=$1
 
-    virst list --all | grep -w ${vm_name} > /dev/null
-    err_check $? "VM $name does not exist"
+    local vm_check=$(virsh list --all | grep -w ${vm_name})
+    if [ -z "$vm_check" ] ; then
+        err_check 22 "VM $vm_name does not exist"
+    fi
 }
 
 # virsh_attach(VM name, VF dev ID)
@@ -362,27 +364,23 @@ function virsh_detach_all() {
 
     # For every vm tmp file
     for file in $(ls ${TMP_BASE}*${TMP_EXT} 2> /dev/null) ; do
-        # Extract VM index and VF id
-        # format of file name is PFID_VMName_VFID.extension
-        local vm_name=$(echo $file | sed -e "s|${TMP_BASE}\(.*\)_.*${TMP_EXT}|\1|")
+        # Extract VF id
         local vf_dev=$(echo $file | sed -e "s|${TMP_BASE}.*_\(.*\)${TMP_EXT}|\1|")
-
-        virsh_detach ${vm_name} ${vf_dev}
+        virsh_detach ${vf_dev}
     done
 }
 
 # virsh_detach
-#   $1 VM name
-#   $2 VF device ID
+#   $1 VF device ID
 function virsh_detach() {
-    local vm_name=$1
-    local vf_dev=$2
+    local vf_dev=$1
 
-    local file=$(ls ${TMP_BASE}*${TMP_EXT} 2> /dev/null | grep ${vm_name} | grep ${vf_dev})
+    local file=$(ls ${TMP_BASE}*${TMP_EXT} 2> /dev/null | grep ${vf_dev})
     if [ -z "$file" ] ; then
-        err_check 2 "Failed finding configuration file for vm ${vm_name}"
+        err_check 2 "Failed finding configuration file for VF ${vf_dev}"
     fi
 
+    local vm_name=$(echo $file | sed -e "s|${TMP_BASE}\(.*\)_.*${TMP_EXT}|\1|")
     local vm_live=$(virsh list | grep "${vm_name}" | grep "running" | wc -l)
     if [ $PAUSE -eq 1 ] && [ $vm_live -eq 1 ] ; then
         msg "Pausing VF ${vf_dev} of live VM ${vm_name}"
@@ -474,7 +472,7 @@ do
         init)                   INIT=1; VF_NUM=${2-}; shift ;;
         reconf)                 RECONF=1; VF_NUM=${2-}; shift ;;
         attach)                 ATTACH=1; VF_IDX=${2-}; VM_NAME=${3-}; shift; shift ;;
-        detach)                 DETACH=1; VF_IDX=${2-}; VM_NAME=${3-}; shift; shift ;;
+        detach)                 DETACH=1; VF_IDX=${2-}; shift ;;
         list_vfs)               LIST_VFS=1 ;;
         list_vf_vm)             LIST_VF_VM=1 ;;
     # options
@@ -575,13 +573,31 @@ elif [ $ATTACH -eq 1 ] && [ $INIT -eq 0 ] && [ $RECONF -eq 0 ] && \
     # Check VF IDX argument
     check_vf_idx $VF_IDX
 
+    # Check if VF with ID VF_IDX exists
+    if [ ! -d ${DEVICE_PATH}/${PF_DEV}/virtfn${VF_IDX} ] ; then
+        err_check 22 "VF $VF_IDX does not exist"
+    fi
+
     # Get vf_dev from vf_idx
     VF_DEV=$(realpath ${DEVICE_PATH}/${PF_DEV}/virtfn${VF_IDX} | grep -o '[^\/]*$')
 
-    ls ${TMP_BASE}*${TMP_EXT} | grep ${VF_DEV} > /dev/null
+    # Check if the VF is already attached to a VM
+    vf_file=$(ls ${TMP_BASE}*${TMP_EXT} 2> /dev/null | grep ${VF_DEV})
+    if [ -n "$vf_file" ] ; then
+        err_check 22 "VF $VF_IDX is already attached to a VM"
+    fi
 
-    err_check $? "VF ${VF_DEV} already attached"
+    # Check if a VM named VM_NAME exists
+    check_vm_exist $VM_NAME
 
+    # Check if the VM has already a VF attached to it
+    # NO multiple VF to VM is supported for now
+    vm_check=$(ls ${TMP_BASE}*${TMP_EXT} 2> /dev/null | grep ${VM_NAME})
+    if [ -n "$vm_check" ] ; then
+        err_check 22 "VM $VM_NAME has already a VF attached"
+    fi
+
+    # Attach the VF to the VM
     virsh_attach $VM_NAME $VF_DEV
 
 elif [ $DETACH -eq 1 ] && [ $INIT -eq 0 ] && [ $RECONF -eq 0 ] && \
@@ -591,24 +607,38 @@ elif [ $DETACH -eq 1 ] && [ $INIT -eq 0 ] && [ $RECONF -eq 0 ] && \
     # Check VF IDX argument
     check_vf_idx $VF_IDX
 
+    # Check if VF with ID VF_IDX exists
+    if [ ! -d ${DEVICE_PATH}/${PF_DEV}/virtfn${VF_IDX} ] ; then
+        err_check 22 "VF $VF_IDX does not exist"
+    fi
+
     # Get vf_dev from vf_idx
     VF_DEV=$(realpath ${DEVICE_PATH}/${PF_DEV}/virtfn${VF_IDX} | grep -o '[^\/]*$')
 
-    virsh_detach $VM_NAME $VF_DEV
+    # Check if the VF is not attached to a VM
+    vf_file=$(ls ${TMP_BASE}*${TMP_EXT} 2> /dev/null | grep ${VF_DEV})
+    if [ ! -f "$vf_file" ] ; then
+        err_check 22 "VF $VF_IDX is not attached to a VM"
+    fi
+
+    # Detach VF
+    virsh_detach  $VF_DEV
 
 elif [ $LIST_VFS -eq 1 ] && [ $INIT -eq 0 ] && [ $RECONF -eq 0 ] && \
     [ $ATTACH -eq 0 ] && [ $DETACH -eq 0 ] && [ $LIST_VF_VM -eq 0 ]; then
 # List vfs command
 
     # Check if any VF exist
-    ls ${DEVICE_PATH}/${PF_DEV} | grep virtfn > /dev/null
+    ls ${DEVICE_PATH}/${PF_DEV} | grep virtfn > /dev/null 2>&1
     if [[ $? == 0 ]] ; then
-        i=0
-        for vf_path in $(realpath ${DEVICE_PATH}/${PF_DEV}/virtfn*)
+
+        # Iterate on all VF
+        for vf_path in $(ls -d ${DEVICE_PATH}/${PF_DEV}/virtfn*)
         do
-            vf_dev=$(echo ${vf_path} | grep -o '[^\/]*$')
-            echo $i ${vf_dev}
-            (( i++ ))
+            # Print VF_IDX and VF_DEV
+            vf_dev=$(echo $(realpath ${vf_path}) | grep -o '[^\/]*$')
+            vf_idx=$(echo $vf_path | sed -e "s|.*virtfn\([0-9]*\)|\1|")
+            echo "${vf_idx} ${vf_dev}"
         done
     fi
 
@@ -617,17 +647,21 @@ elif [ $LIST_VF_VM -eq 1 ] && [ $INIT -eq 0 ] && [ $RECONF -eq 0 ] && \
 # List vf_vm command
 
     # Check if any VF exist
-    ls ${DEVICE_PATH}/${PF_DEV} | grep virtfn > /dev/null
+    ls ${DEVICE_PATH}/${PF_DEV} | grep virtfn > /dev/null 2>&1
     if [[ $? == 0 ]] ; then
-        i=0
-        for vf_path in $(realpath ${DEVICE_PATH}/${PF_DEV}/virtfn*)
+
+        # Iterate on all VF
+        for vf_path in $(ls -d ${DEVICE_PATH}/${PF_DEV}/virtfn*)
         do
-            vf_dev=$(echo ${vf_path} | grep -o '[^\/]*$')
+            vf_dev=$(echo $(realpath ${vf_path}) | grep -o '[^\/]*$')
             tmp_file=$(ls ${TMP_BASE}*${TMP_EXT} 2> /dev/null | grep ${vf_dev})
+            # If the xml file exists, print vf_idx and vm_name association
             if [[ -n "$tmp_file" ]]; then
-                echo $i $(echo $tmp_file | sed -e "s|${TMP_BASE}\(.*\)_.*${TMP_EXT}|\1|")
+                # Print VF_IDX and VM_NAME
+                vf_idx=$(echo $vf_path | sed -e "s|.*virtfn\([0-9]*\)|\1|")
+                vm_name=$(echo $tmp_file | sed -e "s|${TMP_BASE}\(.*\)_.*${TMP_EXT}|\1|")
+                echo "${vf_idx} ${vm_name}"
             fi
-            (( i++ ))
         done
     fi
 
