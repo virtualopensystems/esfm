@@ -606,6 +606,23 @@ elif [ $LIST_VFS -eq 1 ] && [ $INIT -eq 0 ] && [ $RECONF -eq 0 ] && [ $ATTACH -e
     done
 
 elif [ $LIST_VF_VM -eq 1 ] && [ $INIT -eq 0 ] && [ $RECONF -eq 0 ] && [ $ATTACH -eq 0 ] && [ $DETACH -eq 0 ] && [ $LIST_VFS -eq 0 ]; then
+
+    complete_vf_list=$(realpath ${DEVICE_PATH}/${PF_DEV}/virtfn*)
+    i=0
+    TMP_FILES=$(ls ${TMP_BASE}*${TMP_EXT} 2> /dev/null)
+
+    # For each VF
+    for vf_path in ${complete_vf_list}
+    do
+        vf=$(echo ${vf_path} | grep -o '[^\/]*$')
+        # TMP_FILES format: PFID_VMName_VFID.extension
+        tmp_file=$(grep ${vf} ${TMP_FILES})
+        if [[ -z "$tmp_file" ]]; then
+            echo $i $(echo $tmp_file | sed -e "s/${TMP_BASE}\(.*\)_.*${TMP_EXT}/\1/")
+        fi
+        (( i++ ))
+    done
+
 else
     echo "ERROR: Select only one option!"
     usage
