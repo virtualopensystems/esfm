@@ -41,6 +41,16 @@ Available commands:
   reconf <VF_NUM>           Reconfigure num of VF and attach them to VMs (flash
                               bitstream if provided). Use 0 to remove all VFs
 
+  attach <VF_IDX> <VM_NAME> Attach VF_IDX to VM_NAME
+
+  detach <VF_IDX> <VM_NAME> Detach VF_IDX from VM_NAME
+
+  list_pfs                  List PF in the systems returning their IDs
+
+  list_vfs <PF_ID>          List VF for a given PF
+
+  list_vf_vm <PF_ID>        List VF association to VM
+
 Available options:
   -b, --bitstream <file>    Also flash the provided bitstream file
   -qn, --queues_num <num>   Define number of queues during init, default is $Q_NUM_DEFAULT
@@ -92,7 +102,7 @@ function err_check()
 #   $1 question to ask
 function ask() {
     if [ $# -ne 1 ] ; then
-        err_check 2 "Invalid parameters to func ${FUNCNAME[0]}()"
+        err_check 22 "Invalid parameters to func ${FUNCNAME[0]}()"
     fi
 
     if [ $ASSUME_YES -eq 0 ] ; then
@@ -114,7 +124,7 @@ function ask() {
 #   NOTE: assume yes actually ignores the action (it is assumed no in this case)
 function ask_yes() {
     if [ $# -lt 1 ] ; then
-        err_check 2 "Invalid parameters to func ${FUNCNAME[0]}()"
+        err_check 22 "Invalid parameters to func ${FUNCNAME[0]}()"
     fi
 
     if [ $ASSUME_YES -eq 0 ] ; then
@@ -137,7 +147,7 @@ function ask_yes() {
 #   $1 PF device ID to be removed
 function remove() {
     if [ $# -ne 1 ] ; then
-        err_check 2 "Invalid parameters to func ${FUNCNAME[0]}()"
+        err_check 22 "Invalid parameters to func ${FUNCNAME[0]}()"
     fi
     # Remove .F from DEV id
     local pf_dev=${1:0:10}
@@ -154,7 +164,7 @@ function remove() {
 #   Rescan PCI bus
 function rescan() {
     if [ $# -ne 1 ] ; then
-        err_check 2 "Invalid parameters to func ${FUNCNAME[0]}()"
+        err_check 22 "Invalid parameters to func ${FUNCNAME[0]}()"
     fi
     # Remove .F from DEV id
     local pf_dev=${1:0:10}
@@ -171,12 +181,12 @@ function rescan() {
 #   $1 file bitsream.bit to flash
 function flash_bitstream() {
     if [ $# -ne 1 ] ; then
-        err_check 2 "Invalid parameters to func ${FUNCNAME[0]}()"
+        err_check 22 "Invalid parameters to func ${FUNCNAME[0]}()"
     fi
     local bitstream=$1
 
     if [ ! -f "$bitstream" ] ; then
-        err_check 1 "Invalid file $bitstream"
+        err_check 2 "Invalid file $bitstream"
     fi
 
     ask "Are you sure you want to flash the FPGA bitstream?"
@@ -204,7 +214,7 @@ function flash_bitstream() {
 #   $2 num of queues to set
 function set_queues() {
     if [ $# -ne 2 ] ; then
-        err_check 2 "Invalid parameters to func ${FUNCNAME[0]}()"
+        err_check 22 "Invalid parameters to func ${FUNCNAME[0]}()"
     fi
     local pf_dev=$1
     local num_q=$2
@@ -215,7 +225,51 @@ function set_queues() {
 
     local num_q_check=$(cat ${DEVICE_PATH}/${pf_dev}/qdma/qmax 2> /dev/null)
     if [ -z "$num_q_check" ] || [ $num_q_check -ne $num_q ] ; then
-        err_check 1 "Failed setting $num_q queues, set ${num_q_check:-0} instead"
+        err_check 5 "Failed setting $num_q queues, set ${num_q_check:-0} instead"
+    fi
+}
+
+# check_vf_num(vf_num)
+#   Check if vf_num is valid
+#   $1 VF_NUM
+function check_vf_num() {
+    local vf_num=$1
+
+    # Check for a valid VF_NUM
+    max_num_vf=$(cat ${DEVICE_PATH}/${PF_DEV}/sriov_totalvfs 2> /dev/null)
+    if [ -z "$vf_num" ] ||
+        [[ $vf_num != ?(-)+([0-9]) ]] ||
+        [ $vf_num -lt 0 ]
+    then
+        echo "Please provide a valid VF_NUM"
+        usage
+        exit 22 #EINVAL
+    elif [ $vf_num -gt $max_num_vf ]
+    then
+        echo "ERROR: VF count ($vf_num) exceeds device limit ($max_num_vf). "
+        exit 22 #EINVAL
+    fi
+}
+
+# check_vf_idx(vf_idx)
+#   Check if vf_idx is valid
+#   $1 VF_IDX
+function check_vf_idx() {
+    local vf_idx=$1
+
+    # Check for a valid VF_IDX
+    max_num_vf=$(cat ${DEVICE_PATH}/${PF_DEV}/sriov_totalvfs 2> /dev/null)
+    if [ -z "$vf_idx" ] ||
+        [[ $vf_idx != ?(-)+([0-9]) ]] ||
+        [ $vf_idx -lt 0 ]
+    then
+        echo "Please provide a valid VF_IDX"
+        usage
+        exit 22 #EINVAL
+    elif [ $vf_idx -ge $max_num_vf ]
+    then
+        echo "ERROR: VF count ($vf_idx) exceeds device limit ($max_num_vf). "
+        exit 22 #EINVAL
     fi
 }
 
@@ -225,7 +279,7 @@ function set_queues() {
 #   $2 num of VF to set
 function set_vfn() {
     if [ $# -ne 2 ] ; then
-        err_check 2 "Invalid parameters to func ${FUNCNAME[0]}()"
+        err_check 22 "Invalid parameters to func ${FUNCNAME[0]}()"
     fi
     local pf_dev=$1
     local num_vf=$2
@@ -236,31 +290,8 @@ function set_vfn() {
 
     local num_vf_check=$(cat ${DEVICE_PATH}/${pf_dev}/sriov_numvfs 2> /dev/null)
     if [ -z "$num_vf_check" ] || [ $num_vf_check -ne $num_vf ] ; then
-        err_check 1 "Failed setting $num_vf VFs, set ${num_vf_check:-0} instead"
+        err_check 5 "Failed setting $num_vf VFs, set ${num_vf_check:-0} instead"
     fi
-}
-
-# check_vm_num(num_vm)
-#   Check if the number of existing VM is enough
-#   $1 num of vm to check
-function check_vm_num() {
-    if [ $# -ne 1 ] ; then
-        err_check 2 "Invalid parameters to func ${FUNCNAME[0]}()"
-    fi
-    local min_num_vm=$1
-
-    # Check number of VM
-    local num_vm=$(virsh list --all | awk '{print $2}'| grep -v Name | wc -l)
-
-    # Check enough VM are available
-    if [ $num_vm -lt $min_num_vm ] ; then
-        msg "You have $num_vm VM but $min_num_vm are required"
-        msg "You can clone them using:"
-        msg "  $ virt-clone --original ${vm_name}0 --name ${vm_name}<VM#> --auto-clone"
-        msg "or reduce the number of VF to $num_vm"
-        exit 22 #EINVAL
-    fi
-    msg "Found $num_vm VM in the system of $min_num_vm needed"
 }
 
 # check_vm_exist(vm name)
@@ -268,16 +299,12 @@ function check_vm_num() {
 #   $1 VM_NAME
 function check_vm_exist() {
     if [ $# -ne 1 ] ; then
-        err_check 2 "Invalid parameters to func ${FUNCNAME[0]}()"
+        err_check 22 "Invalid parameters to func ${FUNCNAME[0]}()"
     fi
-
     local vm_name=$1
 
-    virst list --all | grep ${vm_name}
-    let ret=$?
-    if [ $ret -ne 0 ]; then
-        err_check $ret "VM $name does not exist"
-    fi
+    virst list --all | grep -w ${vm_name} > /dev/null
+    err_check $? "VM $name does not exist"
 }
 
 # virsh_attach(VM name, VF dev ID)
@@ -286,13 +313,12 @@ function check_vm_exist() {
 #   $2 VF device ID
 function virsh_attach() {
     if [ $# -ne 2 ] ; then
-        err_check 2 "Invalid parameters to func ${FUNCNAME[0]}()"
+        err_check 22 "Invalid parameters to func ${FUNCNAME[0]}()"
     fi
     local vm_name=$1
     local vf_dev=$2
 
     local vf_file="${TMP_BASE}${vm_name}_${vf_dev}${TMP_EXT}"
-
 
     local vm_live=$(virsh list | grep "${vm_name}" | grep "running" | wc -l)
     if [ $PAUSE -eq 1 ] && [ $vm_live -eq 1 ] && [ -f $vf_file ] ; then
@@ -305,9 +331,9 @@ function virsh_attach() {
         virsh qemu-monitor-command ${vm_name} --pretty ${QEMU_CMD_UNPAUSE} > /dev/null
     else
         if [ -f $vf_file ] ; then
-            msg "It seems that a VF is already attached to VM $vm_name, skipping"
+            msg "It seems that a VF is already attached to VM ${vm_name}, skipping"
             return
-    fi
+        fi
 
 # Write xml configuration file for current VF device to be added to the VM with virsh
 cat << EOF > $vf_file
@@ -332,39 +358,6 @@ EOF
     fi
 }
 
-# attach_vf(PF dev ID, VF num)
-#   Attach VF to running VMs
-#   $1 PF device ID
-#   $2 num of VF to attach
-function attach_vf() {
-    if [ $# -ne 2 ] ; then
-        err_check 2 "Invalid parameters ${FUNCNAME[0]}()"
-    fi
-    local pf_dev=$1
-    local num_vf=$2
-
-    if [ $num_vf -eq 0 ] ; then
-        return
-    fi
-
-    # Getting DEV LIST of created VFs from their ID
-    local vf_dev_id=$(cat ${DEVICE_PATH}/${pf_dev}/sriov_vf_device)
-    local vf_dev_list=($(lspci -D -d :$vf_dev_id: | cut -d " " -f 1))
-    if [ -z "${vf_dev_list:=""}" ] || [ ${#vf_dev_list[@]} -ne $num_vf ] ; then
-        err_check 1 "Failed getting VF devices of $pf_dev"
-    fi
-
-    # For each VF, attach device
-    for (( i=0; i < $num_vf; i++ ))
-    do
-        # Unbind VF from its driver
-        $QDMA_MANAGER unbind -b ${vf_dev_list[i]} -y ${DRIVER_LOG}
-
-        # virsh_attach(VM index, VF dev id)
-        virsh_attach $i ${vf_dev_list[i]}
-    done
-}
-
 # virsh_detach_all()
 #   Detach or pause VF devices from virsh VMs
 function virsh_detach_all() {
@@ -372,12 +365,11 @@ function virsh_detach_all() {
     # For every vm tmp file
     for file in $(ls ${TMP_BASE}*${TMP_EXT} 2> /dev/null) ; do
         # Extract VM index and VF id
-        # format of file name is PFID_VMnameVMName_VFID.extension
-        vm_name=$(echo $file | sed -e "s/${TMP_BASE}_.*${TMP_EXT}/\1/")
-        vfi=$(echo $file | sed -e "s/${TMP_BASE}_\(.*\)${TMP_EXT}/\1/")
+        # format of file name is PFID_VMName_VFID.extension
+        vm_name=$(echo $file | sed -e "s/${TMP_BASE}\(.*\)_.*${TMP_EXT}/\1/")
+        vfid=$(echo $file | sed -e "s/${TMP_BASE}.*_\(.*\)${TMP_EXT}/\1/")
 
-        virsh_detach vm_name vfi
-
+        virsh_detach ${vm_name} ${vfid}
     done
 }
 
@@ -386,24 +378,31 @@ function virsh_detach_all() {
 #   $2 VF device ID
 function virsh_detach() {
     vm_name=$1
-    vfi=$2
+    vfid=$2
+
+    local file=$(ls ${TMP_BASE}${vm_name}_${vfid}.xml 2> /dev/null)
+    if [ -z "$file" ] ; then
+        err_check 2 "Failed finding configuration file for vm ${vm_name}"
+    fi
+
     local vm_live=$(virsh list | grep "${vm_name}" | grep "running" | wc -l)
     if [ $PAUSE -eq 1 ] && [ $vm_live -eq 1 ] ; then
-        msg "Pausing VF ${vfi} of live VM ${vm_name}"
+        msg "Pausing VF ${vfid} of live VM ${vm_name}"
 
             # Sending QEMU monitor pause command
             virsh qemu-monitor-command ${vm_name} --pretty ${QEMU_CMD_PAUSE} > /dev/null
 
             # Unbind VF from its driver
-            $QDMA_MANAGER unbind -b ${vfi} -y ${DRIVER_LOG}
+            $QDMA_MANAGER unbind -b ${vfid} -y ${DRIVER_LOG}
         else
             local live_par=""
             if [ $vm_live -eq 1 ] ; then
                 live_par="--live"
-                msg "Detaching VF ${vfi} from live VM ${vm_name}"
+                msg "Detaching VF ${vfid} from live VM ${vm_name}"
             else
-                msg "Detaching VF ${vfi} from offline VM ${vm_name}"
+                msg "Detaching VF ${vfid} from offline VM ${vm_name}"
             fi
+
             virsh detach-device ${vm_name} ${file} ${live_par} --config > /dev/null
             if [ $? -eq 0 ] ; then
                 rm $file
@@ -441,8 +440,11 @@ QUIET=0
 ASSUME_YES=0
 INIT=0
 RECONF=0
+ATTACH=0
+DETACH=0
 BITFILE=""
 VF_NUM=0
+VF_IDX=""
 PAUSE=0
 DRIVER_LOG="-q"
 Q_NUM=$Q_NUM_DEFAULT
@@ -459,7 +461,7 @@ fi
 PF_DEV=${1-}
 # Check for a valid PF dev ID
 if [[ ! "$PF_DEV" =~ ^[0-9A-Fa-f]{4}\:[0-9A-Fa-f]{2}\:[0-9A-Fa-f]{2}\.[0-7]{1}$ ]] ; then
-    err_check 1 "Invalid PF device ID ${PF_DEV-NULL}, format is DDDD:BB:DD.F"
+    err_check 22 "Invalid PF device ID ${PF_DEV-NULL}, format is DDDD:BB:DD.F"
 fi
 #shift the PF_DEV
 shift
@@ -470,8 +472,8 @@ do
     # commands
         init)                   INIT=1; VF_NUM=${2-}; shift ;;
         reconf)                 RECONF=1; VF_NUM=${2-}; shift;;
-        attach)                 ATTACH=2; VF_NUM=${2-}; VM_NAME=${3-}; shift;;
-        detach)                 DETACH=2; VF_NUM=${2-}; VM_NAME=${3-}; shift;;
+        attach)                 ATTACH=1; VF_IDX=${2-}; VM_NAME=${3-}; shift; shift;;
+        detach)                 DETACH=1; VF_IDX=${2-}; VM_NAME=${3-}; shift; shift;;
     # options
         -b | --bitstream)       BITFILE=${2-}; shift ;;
         -qn | --queues_num)     Q_NUM=${2-}; shift ;;
@@ -495,30 +497,15 @@ if [ $QUIET -eq 1 ] ; then
     DRIVER_LOG="-q"
 fi
 
-# Check for a valid VF_NUM
-max_num_vf=$(cat ${DEVICE_PATH}/${PF_DEV}/sriov_totalvfs 2> /dev/null)
-if [ -z "$VF_NUM" ] ||
-    [[ $VF_NUM != ?(-)+([0-9]) ]] ||
-    [ $VF_NUM -lt 0 ]
-then
-    echo "Please provide a valid VF_NUM"
-    usage
-    exit 22 #EINVAL
-elif [ $VF_NUM -gt $max_num_vf ]
-then
-    echo "ERROR: VF count ($VF_NUM) exceeds device limit ($max_num_vf). "
-    exit 22 #EINVAL
-fi
-
 # Create name of temp file for current PF after parsing of pf_dev argument
-declare -r TMP_BASE=".${PF_DEV}_"
+declare -r TMP_BASE="${SCRIPT_DIR}/\.${PF_DEV}_"
 
-# Check if the number of VM is enough for the requested VF
-check_vm_num $VF_NUM
+# Execute command
+if [ $INIT -eq 1 ] && [ $RECONF -eq 0 ] && [ $ATTACH -eq 0 ] && [ $DETACH -eq 0 ] ; then
+# Init command
 
-# Check if only one between init and reconf is selected
-if [ $INIT -eq 1 ] && [ $RECONF -eq 0 ] ; then
-    # Init procedure
+    # Check VF number argument
+    check_vf_num $VF_NUM
 
     # If tmp files are present, VF were assigned to VM but not detached
     TMP_FILES=$(ls ${TMP_BASE}*${TMP_EXT} 2> /dev/null)
@@ -542,15 +529,17 @@ if [ $INIT -eq 1 ] && [ $RECONF -eq 0 ] ; then
 
     set_queues $PF_DEV $Q_NUM
 
-    # Common operations after init or reconf procedures
     if [ $VF_NUM -gt 0 ] ; then
         set_vfn $PF_DEV $VF_NUM
     fi
 
-elif [ $RECONF -eq 1 ] && [ $INIT -eq 0 ] ; then
+elif [ $RECONF -eq 1 ] && [ $INIT -eq 0 ] && && [ $ATTACH -eq 0 ] && [ $DETACH -eq 0 ] ; then
+# Reconfigure command
 
-    # Reconfigure procedure
     rescan $PF_DEV
+
+    # Check VF number argument
+    check_vf_num $VF_NUM
 
     CURR_VF_NUM=$(cat ${DEVICE_PATH}/${PF_DEV}/sriov_numvfs 2> /dev/null)
     if [ ${CURR_VF_NUM:-0} -eq $VF_NUM ] ; then
@@ -572,25 +561,28 @@ elif [ $RECONF -eq 1 ] && [ $INIT -eq 0 ] ; then
 
     if [ $VF_NUM -gt 0 ] ; then
         set_vfn $PF_DEV $VF_NUM
-        attach_vf $PF_DEV $VF_NUM
     fi
 
 elif [ $ATTACH -eq 1 ] && [ $DETACH -eq 0 ] && [ $RECONF -eq 0 ] && [ $INIT -eq 0 ] ; then
+# Attach command
 
-    if [ $VF_NUM -gt 0 ] ; then
-        virsh_attach $VF_NAME $VF_NUM
-    fi
+    # Check VF IDX argument
+    check_vf_idx $VF_IDX
+
+    virsh_attach $VF_NAME $VF_IDX
 
 elif [ $DETACH -eq 1 ] && [ $ATTACH -eq 0 ] && [ $RECONF -eq 0 ] && [ $INIT -eq 0 ] ; then
+# Detach command
 
-    if [ $VF_NUM -gt 0 ] ; then
-        virsh_detach $VF_NAME $VF_NUM
-    fi
+    # Check VF IDX argument
+    check_vf_idx $VF_IDX
+
+    virsh_detach $VF_NAME $VF_IDX
 
 else
-    echo "ERROR: Select init OR reconf option!"
+    echo "ERROR: Select only one option!"
     usage
-    exit 22
+    exit 22 #EINVAL
 fi
 
 
