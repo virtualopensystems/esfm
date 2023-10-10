@@ -45,8 +45,6 @@ Available commands:
 
   detach <VF_IDX> <VM_NAME> Detach VF_IDX from VM_NAME
 
-  list_pfs                  List PF in the systems returning their IDs
-
   list_vfs <PF_ID>          List VF for a given PF
 
   list_vf_vm <PF_ID>        List VF association to VM
@@ -307,6 +305,14 @@ function check_vm_exist() {
     err_check $? "VM $name does not exist"
 }
 
+# get_vf_id (VF idx)
+# return the VF dev ID given idx
+#   $1 VF idx
+function get_vf_id() {
+    VF_IDX=$1
+    VF_DEV=$(realpath ${DEVICE_PATH}/${PF_DEV}/virtfn${VF_IDX} | grep -o '[^\/]*$')
+}
+
 # virsh_attach(VM name, VF dev ID)
 #   Attach or unpause VF device to virsh VM
 #   $1 VM name
@@ -533,7 +539,7 @@ if [ $INIT -eq 1 ] && [ $RECONF -eq 0 ] && [ $ATTACH -eq 0 ] && [ $DETACH -eq 0 
         set_vfn $PF_DEV $VF_NUM
     fi
 
-elif [ $RECONF -eq 1 ] && [ $INIT -eq 0 ] && && [ $ATTACH -eq 0 ] && [ $DETACH -eq 0 ] ; then
+elif [ $RECONF -eq 1 ] && [ $INIT -eq 0 ] && [ $ATTACH -eq 0 ] && [ $DETACH -eq 0 ] ; then
 # Reconfigure command
 
     rescan $PF_DEV
@@ -569,6 +575,8 @@ elif [ $ATTACH -eq 1 ] && [ $DETACH -eq 0 ] && [ $RECONF -eq 0 ] && [ $INIT -eq 
     # Check VF IDX argument
     check_vf_idx $VF_IDX
 
+    # Get vf_dev from vf_idx
+    VF_DEV=get_vf_id $VF_IDX
     virsh_attach $VF_NAME $VF_IDX
 
 elif [ $DETACH -eq 1 ] && [ $ATTACH -eq 0 ] && [ $RECONF -eq 0 ] && [ $INIT -eq 0 ] ; then
@@ -577,6 +585,8 @@ elif [ $DETACH -eq 1 ] && [ $ATTACH -eq 0 ] && [ $RECONF -eq 0 ] && [ $INIT -eq 
     # Check VF IDX argument
     check_vf_idx $VF_IDX
 
+    # Get vf_dev from vf_idx
+    VF_DEV=get_vf_id $VF_IDX
     virsh_detach $VF_NAME $VF_IDX
 
 else
