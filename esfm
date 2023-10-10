@@ -305,10 +305,10 @@ function check_vm_exist() {
     err_check $? "VM $name does not exist"
 }
 
-# get_vf_id (VF idx)
+# get_vfdev (VF idx)
 # return the VF dev ID given idx
 #   $1 VF idx
-function get_vf_id() {
+function get_vfdev() {
     VF_IDX=$1
     VF_DEV=$(realpath ${DEVICE_PATH}/${PF_DEV}/virtfn${VF_IDX} | grep -o '[^\/]*$')
 }
@@ -448,6 +448,8 @@ INIT=0
 RECONF=0
 ATTACH=0
 DETACH=0
+LIST_VFS=0
+LIST_VF_VM=0
 BITFILE=""
 VF_NUM=0
 VF_IDX=""
@@ -480,6 +482,8 @@ do
         reconf)                 RECONF=1; VF_NUM=${2-}; shift;;
         attach)                 ATTACH=1; VF_IDX=${2-}; VM_NAME=${3-}; shift; shift;;
         detach)                 DETACH=1; VF_IDX=${2-}; VM_NAME=${3-}; shift; shift;;
+        list_vfs)               LIST_VFS=1; PF_ID=${2-}; shift;;
+        list_vf_vm)             LIST_VF_VM=1; PF_ID=${2-}; shift;;
     # options
         -b | --bitstream)       BITFILE=${2-}; shift ;;
         -qn | --queues_num)     Q_NUM=${2-}; shift ;;
@@ -507,7 +511,7 @@ fi
 declare -r TMP_BASE="${SCRIPT_DIR}/\.${PF_DEV}_"
 
 # Execute command
-if [ $INIT -eq 1 ] && [ $RECONF -eq 0 ] && [ $ATTACH -eq 0 ] && [ $DETACH -eq 0 ] ; then
+if [ $INIT -eq 1 ] && [ $RECONF -eq 0 ] && [ $ATTACH -eq 0 ] && [ $DETACH -eq 0 ] && [ $LIST_VFS -eq 0 ] && [ $LIST_VF_VM -eq 0 ]; then
 # Init command
 
     # Check VF number argument
@@ -539,7 +543,7 @@ if [ $INIT -eq 1 ] && [ $RECONF -eq 0 ] && [ $ATTACH -eq 0 ] && [ $DETACH -eq 0 
         set_vfn $PF_DEV $VF_NUM
     fi
 
-elif [ $RECONF -eq 1 ] && [ $INIT -eq 0 ] && [ $ATTACH -eq 0 ] && [ $DETACH -eq 0 ] ; then
+elif [ $RECONF -eq 1 ] && [ $INIT -eq 0 ] && [ $ATTACH -eq 0 ] && [ $DETACH -eq 0 ] && [ $LIST_VFS -eq 0 ] && [ $LIST_VF_VM -eq 0 ];  then
 # Reconfigure command
 
     rescan $PF_DEV
@@ -569,26 +573,39 @@ elif [ $RECONF -eq 1 ] && [ $INIT -eq 0 ] && [ $ATTACH -eq 0 ] && [ $DETACH -eq 
         set_vfn $PF_DEV $VF_NUM
     fi
 
-elif [ $ATTACH -eq 1 ] && [ $DETACH -eq 0 ] && [ $RECONF -eq 0 ] && [ $INIT -eq 0 ] ; then
+elif [ $ATTACH -eq 1 ] && [ $INIT -eq 0 ] && [ $RECONF -eq 0 ] && [ $DETACH -eq 0 ] && [ $LIST_VFS -eq 0 ] && [ $LIST_VF_VM -eq 0 ]; then
 # Attach command
 
     # Check VF IDX argument
     check_vf_idx $VF_IDX
 
     # Get vf_dev from vf_idx
-    VF_DEV=get_vf_id $VF_IDX
-    virsh_attach $VF_NAME $VF_IDX
+    VF_DEV=$(get_vfdev $VF_IDX)
+    virsh_attach $VF_NAME $VF_DEV
 
-elif [ $DETACH -eq 1 ] && [ $ATTACH -eq 0 ] && [ $RECONF -eq 0 ] && [ $INIT -eq 0 ] ; then
+elif [ $DETACH -eq 1 ] && [ $INIT -eq 0 ] && [ $RECONF -eq 0 ] && [ $ATTACH -eq 0 ] && [ $LIST_VFS -eq 0 ] && [ $LIST_VF_VM -eq 0 ]; then
 # Detach command
 
     # Check VF IDX argument
     check_vf_idx $VF_IDX
 
     # Get vf_dev from vf_idx
-    VF_DEV=get_vf_id $VF_IDX
-    virsh_detach $VF_NAME $VF_IDX
+    VF_DEV=$(get_vfdev $VF_IDX)
+    virsh_detach $VF_NAME $VF_DEV
 
+elif [ $LIST_VFS -eq 1 ] && [ $INIT -eq 0 ] && [ $RECONF -eq 0 ] && [ $ATTACH -eq 0 ] && [ $DETACH -eq 0 ] && [ $LIST_VF_VM -eq 0 ]; then
+#List vfs command
+
+    complete_vf_list=$(realpath ${DEVICE_PATH}/${PF_DEV}/virtfn*)
+    local i=0
+    for vf_path in ${complete_vf_list}
+    do
+        vf=$(echo ${vf_path} | grep -o '[^\/]*$')
+        echo $i ${vf}
+        (( i++ ))
+    done
+
+elif [ $LIST_VF_VM -eq 1 ] && [ $INIT -eq 0 ] && [ $RECONF -eq 0 ] && [ $ATTACH -eq 0 ] && [ $DETACH -eq 0 ] && [ $LIST_VFS -eq 0 ]; then
 else
     echo "ERROR: Select only one option!"
     usage
