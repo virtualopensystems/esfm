@@ -249,28 +249,6 @@ function check_vf_num() {
     fi
 }
 
-# check_vf_idx(vf_idx)
-#   Check if vf_idx is valid
-#   $1 VF_IDX
-function check_vf_idx() {
-    local vf_idx=$1
-
-    # Check for a valid VF_IDX
-    max_num_vf=$(cat ${DEVICE_PATH}/${PF_DEV}/sriov_totalvfs 2> /dev/null)
-    if [ -z "$vf_idx" ] ||
-        [[ $vf_idx != ?(-)+([0-9]) ]] ||
-        [ $vf_idx -lt 0 ]
-    then
-        echo "Please provide a valid VF_IDX"
-        usage
-        exit 22 #EINVAL
-    elif [ $vf_idx -ge $max_num_vf ]
-    then
-        echo "ERROR: VF count ($vf_idx) exceeds device limit ($max_num_vf). "
-        exit 22 #EINVAL
-    fi
-}
-
 # set_vfn(PF dev ID, VF num)
 #   Set VF number to PF device
 #   $1 ID of PF
@@ -570,9 +548,6 @@ elif [ $ATTACH -eq 1 ] && [ $INIT -eq 0 ] && [ $RECONF -eq 0 ] && \
     [ $DETACH -eq 0 ] && [ $LIST_VFS -eq 0 ] && [ $LIST_VF_VM -eq 0 ]; then
 # Attach command
 
-    # Check VF IDX argument
-    check_vf_idx $VF_IDX
-
     # Check if VF with ID VF_IDX exists
     if [ ! -d ${DEVICE_PATH}/${PF_DEV}/virtfn${VF_IDX} ] ; then
         err_check 22 "VF $VF_IDX does not exist"
@@ -603,9 +578,6 @@ elif [ $ATTACH -eq 1 ] && [ $INIT -eq 0 ] && [ $RECONF -eq 0 ] && \
 elif [ $DETACH -eq 1 ] && [ $INIT -eq 0 ] && [ $RECONF -eq 0 ] && \
     [ $ATTACH -eq 0 ] && [ $LIST_VFS -eq 0 ] && [ $LIST_VF_VM -eq 0 ]; then
 # Detach command
-
-    # Check VF IDX argument
-    check_vf_idx $VF_IDX
 
     # Check if VF with ID VF_IDX exists
     if [ ! -d ${DEVICE_PATH}/${PF_DEV}/virtfn${VF_IDX} ] ; then
