@@ -578,6 +578,10 @@ elif [ $ATTACH -eq 1 ] && [ $INIT -eq 0 ] && [ $RECONF -eq 0 ] && \
     # Get vf_dev from vf_idx
     VF_DEV=$(realpath ${DEVICE_PATH}/${PF_DEV}/virtfn${VF_IDX} | grep -o '[^\/]*$')
 
+    ls ${TMP_BASE}*${TMP_EXT} | grep ${VF_DEV} > /dev/null
+
+    err_check $? "VF ${VF_DEV} already attached"
+
     virsh_attach $VM_NAME $VF_DEV
 
 elif [ $DETACH -eq 1 ] && [ $INIT -eq 0 ] && [ $RECONF -eq 0 ] && \
@@ -597,7 +601,7 @@ elif [ $LIST_VFS -eq 1 ] && [ $INIT -eq 0 ] && [ $RECONF -eq 0 ] && \
 # List vfs command
 
     # Check if any VF exist
-    ls /sys/bus/pci/devices/0000\:83\:00.0/ | grep virtfn > /dev/null
+    ls ${DEVICE_PATH}/${PF_DEV} | grep virtfn > /dev/null
     if [[ $? == 0 ]] ; then
         i=0
         for vf_path in $(realpath ${DEVICE_PATH}/${PF_DEV}/virtfn*)
@@ -613,7 +617,7 @@ elif [ $LIST_VF_VM -eq 1 ] && [ $INIT -eq 0 ] && [ $RECONF -eq 0 ] && \
 # List vf_vm command
 
     # Check if any VF exist
-    ls /sys/bus/pci/devices/0000\:83\:00.0/ | grep virtfn > /dev/null
+    ls ${DEVICE_PATH}/${PF_DEV} | grep virtfn > /dev/null
     if [[ $? == 0 ]] ; then
         i=0
         for vf_path in $(realpath ${DEVICE_PATH}/${PF_DEV}/virtfn*)
