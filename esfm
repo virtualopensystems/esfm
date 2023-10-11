@@ -242,10 +242,12 @@ function check_vf_num() {
         echo "Please provide a valid VF_NUM"
         usage
         exit 22 #EINVAL
-    elif [ "$vf_num" -gt "$max_num_vf" ]
+    elif [ -z "$max_num_vf" ] 
     then
-        echo "ERROR: VF count ($vf_num) exceeds device limit ($max_num_vf). "
-        exit 22 #EINVAL
+        err_check 2 "ERROR: cannot get number of sriov VF"
+    elif [ ${vf_num} -gt ${max_num_vf} ]
+    then
+        err_check 22 "ERROR: VF count ($vf_num) exceeds device limit ($max_num_vf). "
     fi
 }
 
