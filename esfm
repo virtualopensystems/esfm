@@ -242,7 +242,7 @@ function check_vf_num() {
         echo "Please provide a valid VF_NUM"
         usage
         exit 22 #EINVAL
-    elif [ $vf_num -gt $max_num_vf ]
+    elif [ "$vf_num" -gt "$max_num_vf" ]
     then
         echo "ERROR: VF count ($vf_num) exceeds device limit ($max_num_vf). "
         exit 22 #EINVAL
@@ -497,6 +497,9 @@ if [ $INIT -eq 1 ] && [ $RECONF -eq 0 ] && [ $ATTACH -eq 0 ] && \
         PAUSE=0
         virsh_detach_all
     fi
+
+    # make sure PCI dev info are up to date
+    rescan $PF_DEV
 
     remove $PF_DEV
 
