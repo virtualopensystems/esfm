@@ -231,7 +231,7 @@ function set_queues() {
 #   Check if vf_num is valid
 #   $1 VF_NUM
 function check_vf_num() {
-    local vf_num=$1
+    local vf_num=${1-}
 
     # Check for a valid VF_NUM
     max_num_vf=$(cat ${DEVICE_PATH}/${PF_DEV}/sriov_totalvfs 2> /dev/null)
@@ -274,10 +274,11 @@ function set_vfn() {
 #   Check if the VM vm_name exists
 #   $1 VM_NAME
 function check_vm_exist() {
-    if [ $# -ne 1 ] ; then
-        err_check 22 "Invalid parameters to func ${FUNCNAME[0]}()"
+    local vm_name=${1-}
+
+    if [ -z "$vm_name" ] ; then
+        err_check 22 "Provide a valid VM name"
     fi
-    local vm_name=$1
 
     local vm_check=$(virsh list --all | grep -w ${vm_name})
     if [ -z "$vm_check" ] ; then
@@ -520,10 +521,10 @@ elif [ $RECONF -eq 1 ] && [ $INIT -eq 0 ] && [ $ATTACH -eq 0 ] && \
     [ $DETACH -eq 0 ] && [ $LIST_VFS -eq 0 ] && [ $LIST_VF_VM -eq 0 ];  then
 # Reconfigure command
 
-    rescan $PF_DEV
-
     # Check VF number argument
     check_vf_num $VF_NUM
+
+    rescan $PF_DEV
 
     CURR_VF_NUM=$(cat ${DEVICE_PATH}/${PF_DEV}/sriov_numvfs 2> /dev/null)
     if [ ${CURR_VF_NUM:-0} -eq $VF_NUM ] ; then
