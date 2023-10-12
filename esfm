@@ -391,6 +391,7 @@ function virsh_detach() {
 ################################################################################
 
 # Constant parameters
+declare -r CFG_DIR="/usr/local/share/esfm"
 declare -r SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 declare -r QDMA_MANAGER="${SCRIPT_DIR}/tools/qdma_manager.sh"
 declare -r PROGRAM_XSCT="${SCRIPT_DIR}/tools/program_xsct.tcl"
@@ -479,8 +480,12 @@ if [ $QUIET -eq 1 ] ; then
     DRIVER_LOG="-q"
 fi
 
+if [ ! -d "$CFG_DIR" ] ; then
+    sudo mkdir -p ${CFG_DIR}
+    sudo chmod 777 ${CFG_DIR}
+fi
 # Create name of temp file for current PF after parsing of pf_dev argument
-declare -r TMP_BASE="${SCRIPT_DIR}/.${PF_DEV}_"
+declare -r TMP_BASE="${CFG_DIR}/${PF_DEV}_"
 
 # Execute command
 if [ $INIT -eq 1 ] && [ $RECONF -eq 0 ] && [ $ATTACH -eq 0 ] && \
