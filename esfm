@@ -325,6 +325,12 @@ cat << EOF > $vf_file
 </hostdev>
 EOF
 
+        if [ -f "$vf_file" ] ; then
+            chmod 777 ${vf_file}
+        else
+            err_check 1 "Cannot create configuration file \"$vf_file\""
+        fi
+
         local live_par=""
         if [ $vm_live -eq 1 ] ; then
             live_par="--live"
