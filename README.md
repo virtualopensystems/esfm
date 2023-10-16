@@ -36,12 +36,12 @@ To list the available VF:
 $> ./esfm 0000:83:00.00 list_vfs
 ```
 
-To attach a VF(e.g the second one from before, ID 1) to a VM(e.g everestg0):
+To attach a VF (e.g the second one from before, ID 1) to a VM (e.g everestg0):
 ```shell
 $> ./esfm 0000:83:00.00 attach 1 everestg0
 ```
 
-To attach another VF(e.g the first one from before, ID 0) to a VM(e.g everestg6):
+To attach another VF (e.g the first one from before, ID 0) to a VM (e.g everestg6):
 ```shell
 $> ./esfm 0000:83:00.00 attach 0 everestg6
 ```
@@ -53,7 +53,7 @@ $> ./esfm 0000:83:00.0 list_vf_vm
 
 To detach the VF 1 from its VM
 ```shell
-$> ./esfm 0000:83:00.0 detach 15
+$> ./esfm 0000:83:00.0 detach 1
 ```
 
 For a list of the available options, run:
