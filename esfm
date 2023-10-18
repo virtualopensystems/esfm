@@ -288,19 +288,59 @@ function check_vm_exist() {
     fi
 }
 
+# attach_detach_fake_device(ATTACH, VF_IDX, VM_NAME, VF_DEV, LIVE_PARAM)
+# attach or detach a fake console device to/from vm: VM_NAME
+#   $1 ATTACH (1 attach, 0 detach)
+#   $2 VF_IDX
+#   $3 VM_NAME
+#   $4 VF_DEV
+#   $5 LIVE_PARAM VM alive or not
+function attach_detach_fake_device() {
+    local attach=$1
+    local vf_idx=$2
+    local vm_name=$3
+    local vf_dev=$4
+    local live_param=${5:-""}
+    local tmp_file=".everest_tmp_${PF_DEV}_${vf_idx}${TMP_EXT}"
+
+cat << EOF > ${tmp_file}
+<channel type="file">
+  <source path="/dev/null">
+  </source>
+  <target type="virtio" name="everest_${vf_idx}_${vf_dev}"/>
+</channel>
+EOF
+    if [ $attach -eq 1 ] ; then
+        virsh attach-device ${vm_name} ${tmp_file} ${live_param} --config > /dev/null
+    else
+        virsh detach-device ${vm_name} ${tmp_file} ${live_param} --config > /dev/null
+    fi
+    rm ${tmp_file}
+}
+
 # virsh_attach(VM name, VF dev ID)
 #   Attach or unpause VF device to virsh VM
 #   $1 VM name
-#   $2 VF device ID
+#   $2 VF IDX
 function virsh_attach() {
     if [ $# -ne 2 ] ; then
         err_check 22 "Invalid parameters to func ${FUNCNAME[0]}()"
     fi
     local vm_name=$1
-    local vf_dev=$2
+    local vf_idx=$2
+    # Check if VF with ID VF_IDX exists
+    if [ ! -d ${DEVICE_PATH}/${PF_DEV}/virtfn${vf_idx} ] ; then
+        err_check 22 "VF $VF_IDX does not exist"
+    fi
+
+    local vf_dev=$(realpath ${DEVICE_PATH}/${PF_DEV}/virtfn${vf_idx} | grep -o '[^\/]*$')
+
+    # Check if the VF is already attached to a VM
+    if [ -n "$(ls ${TMP_BASE}*${TMP_EXT} 2> /dev/null | grep ${vf_dev})" ] ; then
+        err_check 22 "VF $VF_IDX is already attached to a VM"
+    fi
 
     local vf_file="${TMP_BASE}${vm_name}_${vf_dev}${TMP_EXT}"
-
     local vm_live=$(virsh list | grep "${vm_name}" | grep "running" | wc -l)
     if [ $PAUSE -eq 1 ] && [ $vm_live -eq 1 ] && [ -f $vf_file ] ; then
         msg "Unpausing VF ${vf_dev} of live VM ${vm_name}"
@@ -339,7 +379,9 @@ EOF
             msg "Attaching VF ${vf_dev} to offline VM ${vm_name}"
         fi
         virsh attach-device ${vm_name} ${vf_file} ${live_par} --config > /dev/null
-        if [ $? -ne 0 ] ; then
+        if [ $? -eq 0 ] ; then
+            attach_detach_fake_device 1 ${vf_idx} ${vm_name} ${vf_dev} ${live_par}
+        else
             ask_yes "Do you want to remove the VF file \"${vf_file}\"?" rm $vf_file
         fi
     fi
@@ -349,18 +391,30 @@ EOF
 #   Detach or pause VF devices from virsh VMs
 function virsh_detach_all() {
 
-    # For every vm tmp file
-    for file in $(ls ${TMP_BASE}*${TMP_EXT} 2> /dev/null) ; do
-        # Extract VF id
-        local vf_dev=$(echo $file | sed -e "s|${TMP_BASE}.*_\(.*\)${TMP_EXT}|\1|")
-        virsh_detach ${vf_dev}
+    # Iterate on all VF
+    for vf_path in $(ls -d ${DEVICE_PATH}/${PF_DEV}/virtfn*)
+    do
+        vf_dev=$(echo $(realpath ${vf_path}) | grep -o '[^\/]*$')
+        tmp_file=$(ls ${TMP_BASE}*${TMP_EXT} 2> /dev/null | grep ${vf_dev})
+        # If the xml file exists, print vf_idx and vm_name association
+        if [[ -n "$tmp_file" ]]; then
+            # Print VF_IDX and VM_NAME
+            vf_idx=$(echo $vf_path | sed -e "s|.*virtfn\([0-9]*\)|\1|")
+            virsh_detach ${vf_idx}
+        fi
     done
 }
 
 # virsh_detach
-#   $1 VF device ID
+#   $1 VF IDX
 function virsh_detach() {
-    local vf_dev=$1
+    local vf_idx=$1
+    local vf_dev=$(realpath ${DEVICE_PATH}/${PF_DEV}/virtfn${vf_idx} | grep -o '[^\/]*$')
+    # Check if the VF is not attached to a VM
+    vf_file=$(ls ${TMP_BASE}*${TMP_EXT} 2> /dev/null | grep ${vf_dev})
+    if [ ! -f "$vf_file" ] ; then
+        err_check 22 "VF $VF_IDX is not attached to a VM"
+    fi
 
     local file=$(ls ${TMP_BASE}*${TMP_EXT} 2> /dev/null | grep ${vf_dev})
     if [ -z "$file" ] ; then
@@ -389,6 +443,7 @@ function virsh_detach() {
             virsh detach-device ${vm_name} ${file} ${live_par} --config > /dev/null
             if [ $? -eq 0 ] ; then
                 rm $file
+                attach_detach_fake_device 0 ${vf_idx} ${vm_name} ${vf_dev} ${live_par}
             else
                 ask_yes "Do you want to remove the VF file \"${file}\"?" rm $file
             fi
@@ -565,20 +620,6 @@ elif [ $ATTACH -eq 1 ] && [ $INIT -eq 0 ] && [ $RECONF -eq 0 ] && \
     [ $DETACH -eq 0 ] && [ $LIST_VFS -eq 0 ] && [ $LIST_VF_VM -eq 0 ]; then
 # Attach command
 
-    # Check if VF with ID VF_IDX exists
-    if [ ! -d ${DEVICE_PATH}/${PF_DEV}/virtfn${VF_IDX} ] ; then
-        err_check 22 "VF $VF_IDX does not exist"
-    fi
-
-    # Get vf_dev from vf_idx
-    VF_DEV=$(realpath ${DEVICE_PATH}/${PF_DEV}/virtfn${VF_IDX} | grep -o '[^\/]*$')
-
-    # Check if the VF is already attached to a VM
-    vf_file=$(ls ${TMP_BASE}*${TMP_EXT} 2> /dev/null | grep ${VF_DEV})
-    if [ -n "$vf_file" ] ; then
-        err_check 22 "VF $VF_IDX is already attached to a VM"
-    fi
-
     # Check if a VM named VM_NAME exists
     check_vm_exist $VM_NAME
 
@@ -590,7 +631,7 @@ elif [ $ATTACH -eq 1 ] && [ $INIT -eq 0 ] && [ $RECONF -eq 0 ] && \
     fi
 
     # Attach the VF to the VM
-    virsh_attach $VM_NAME $VF_DEV
+    virsh_attach $VM_NAME $VF_IDX
 
 elif [ $DETACH -eq 1 ] && [ $INIT -eq 0 ] && [ $RECONF -eq 0 ] && \
     [ $ATTACH -eq 0 ] && [ $LIST_VFS -eq 0 ] && [ $LIST_VF_VM -eq 0 ]; then
@@ -601,17 +642,8 @@ elif [ $DETACH -eq 1 ] && [ $INIT -eq 0 ] && [ $RECONF -eq 0 ] && \
         err_check 22 "VF $VF_IDX does not exist"
     fi
 
-    # Get vf_dev from vf_idx
-    VF_DEV=$(realpath ${DEVICE_PATH}/${PF_DEV}/virtfn${VF_IDX} | grep -o '[^\/]*$')
-
-    # Check if the VF is not attached to a VM
-    vf_file=$(ls ${TMP_BASE}*${TMP_EXT} 2> /dev/null | grep ${VF_DEV})
-    if [ ! -f "$vf_file" ] ; then
-        err_check 22 "VF $VF_IDX is not attached to a VM"
-    fi
-
     # Detach VF
-    virsh_detach  $VF_DEV
+    virsh_detach ${VF_IDX}
 
 elif [ $LIST_VFS -eq 1 ] && [ $INIT -eq 0 ] && [ $RECONF -eq 0 ] && \
     [ $ATTACH -eq 0 ] && [ $DETACH -eq 0 ] && [ $LIST_VF_VM -eq 0 ]; then
