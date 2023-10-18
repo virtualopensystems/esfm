@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project>
   <core name="" type="" target="">
-    <kernel name="krnl_helm" language="c" vlnv="xilinx.com:hls:krnl_helm:1.0" attributes="" hash="" preferredWorkGroupSizeMultiple="0" workGroupSize="1" debug="false" interrupt="true">
+    <kernel name="krnl_helm" language="c" vlnv="user.org:user:krnl_helm:1.0" attributes="" hash="" preferredWorkGroupSizeMultiple="0" workGroupSize="1" debug="false" interrupt="true">
       <port name="S_AXI_CONTROL" mode="slave" range="0x1000" dataWidth="64" portType="addressable" base="0x00000000"/>
       <port name="M_AXI_GMEM0" mode="master" range="0xFFFFFFFF" dataWidth="-1" portType="addressable" base="0x00000000"/>
       <port name="M_AXI_GMEM1" mode="master" range="0xFFFFFFFF" dataWidth="-1" portType="addressable" base="0x00000000"/>

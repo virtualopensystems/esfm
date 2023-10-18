@@ -65,16 +65,5 @@ set_property PACKAGE_PIN AT8 [get_ports {pci_express_x16_txn[6]}]
 set_property PACKAGE_PIN BF22 [get_ports pcie_perstn]
 set_property PACKAGE_PIN AR14 [get_ports pcie_refclk_clk_n]
 set_property PACKAGE_PIN AR15 [get_ports pcie_refclk_clk_p]
-
-#set_property PACKAGE_PIN AK42     [get_ports "hbm_ref_clk"] ;# Bank 127 - MGTREFCLK1P_127 NS1_SYSCLK5_P
-#set_property PACKAGE_PIN AP42     [get_ports "apb_aclk"] ;# Bank 125 - MGTREFCLK1P_125 NS2_SYSCLK6_P
-
 set_property IOSTANDARD LVCMOS18 [get_ports pcie_perstn]
-
-#create_clock -period 10.000 -name hbm_ref_clk   [get_ports "hbm_ref_clk"]
-#create_clock -period 10.000 -name apb_aclk      [get_ports "apb_aclk"]
-
-
-#set_input_delay -clock [get_clocks pcie_refclk_clk_p] -min -add_delay 0.500 [get_ports pcie_perstn]
-#set_input_delay -clock [get_clocks pcie_refclk_clk_p] -max -add_delay 2.000 [get_ports pcie_perstn]
-
+create_clock -period 10.000 -name clk_100MHz      [get_ports "clk_100MHz"]
