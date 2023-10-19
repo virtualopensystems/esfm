@@ -293,21 +293,21 @@ function check_vm_exist() {
 #   $1 ATTACH (1 attach, 0 detach)
 #   $2 VF_IDX
 #   $3 VM_NAME
-#   $4 VF_DEV
-#   $5 LIVE_PARAM VM alive or not
+#   $4 LIVE_PARAM VM alive or not
 function attach_detach_fake_device() {
     local attach=$1
     local vf_idx=$2
     local vm_name=$3
-    local vf_dev=$4
-    local live_param=${5:-""}
+    local live_param=${4:-""}
+
     local tmp_file=".everest_tmp_${PF_DEV}_${vf_idx}${TMP_EXT}"
+    local vf_bdf=$(virsh dumpxml ${vm_name} | grep "/hostdev" -B1 | awk -F"'" '/<address/{print $6$8$10}' | awk -F"0x" '{print $2$3$4}')
 
 cat << EOF > ${tmp_file}
 <channel type="file">
-  <source path="/dev/null">
+  <source path="/dev/null" append='on'>
   </source>
-  <target type="virtio" name="everest_${vf_idx}_${vf_dev}"/>
+  <target type="virtio" name="everestvf_${vf_idx}_000${vf_bdf}"/>
 </channel>
 EOF
     if [ $attach -eq 1 ] ; then
@@ -360,7 +360,7 @@ function virsh_attach() {
 cat << EOF > $vf_file
 <hostdev mode='subsystem' type='pci' managed='yes'>
   <source>
-     <address domain='0x${vf_dev:0:4}' bus='0x${vf_dev:5:2}' slot='0x${vf_dev:8:2}' function='0x${vf_dev:11:2}'/>
+     <address domain='0x${vf_dev:0:4}' bus='0x${vf_dev:5:2}' slot='0x${vf_dev:8:2}' function='0x${vf_dev:11:1}'/>
   </source>
 </hostdev>
 EOF
@@ -380,7 +380,7 @@ EOF
         fi
         virsh attach-device ${vm_name} ${vf_file} ${live_par} --config > /dev/null
         if [ $? -eq 0 ] ; then
-            attach_detach_fake_device 1 ${vf_idx} ${vm_name} ${vf_dev} ${live_par}
+            attach_detach_fake_device 1 ${vf_idx} ${vm_name} ${live_par}
         else
             ask_yes "Do you want to remove the VF file \"${vf_file}\"?" rm $vf_file
         fi
@@ -440,10 +440,10 @@ function virsh_detach() {
                 msg "Detaching VF ${vf_dev} from offline VM ${vm_name}"
             fi
 
+            attach_detach_fake_device 0 ${vf_idx} ${vm_name} ${live_par}
             virsh detach-device ${vm_name} ${file} ${live_par} --config > /dev/null
             if [ $? -eq 0 ] ; then
                 rm $file
-                attach_detach_fake_device 0 ${vf_idx} ${vm_name} ${vf_dev} ${live_par}
             else
                 ask_yes "Do you want to remove the VF file \"${file}\"?" rm $file
             fi
