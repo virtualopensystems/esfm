@@ -302,12 +302,13 @@ function attach_detach_fake_device() {
 
     local tmp_file=".everest_tmp_${PF_DEV}_${vf_idx}${TMP_EXT}"
     local vf_bdf=$(virsh dumpxml ${vm_name} | grep "/hostdev" -B1 | awk -F"'" '/<address/{print $6$8$10}' | awk -F"0x" '{print $2$3$4}')
+    local tot_num_vf=$(cat ${DEVICE_PATH}/${PF_DEV}/sriov_numvfs 2> /dev/null)
 
 cat << EOF > ${tmp_file}
 <channel type="file">
   <source path="/dev/null" append='on'>
   </source>
-  <target type="virtio" name="everestvf_${vf_idx}_000${vf_bdf}"/>
+  <target type="virtio" name="everestvf_${tot_num_vf:-0}_${vf_idx}_000${vf_bdf}"/>
 </channel>
 EOF
     if [ $attach -eq 1 ] ; then
