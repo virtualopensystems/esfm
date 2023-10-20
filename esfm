@@ -554,9 +554,6 @@ if [ $INIT -eq 1 ] && [ $RECONF -eq 0 ] && [ $ATTACH -eq 0 ] && \
     [ $DETACH -eq 0 ] && [ $LIST_VFS -eq 0 ] && [ $LIST_VF_VM -eq 0 ]; then
 # Init command
 
-    # Check VF number argument
-    check_vf_num $VF_NUM
-
     # If tmp files are present, VF were assigned to VM but not detached
     TMP_FILES=$(ls ${TMP_BASE}*${TMP_EXT} 2> /dev/null)
     if [ -n "$TMP_FILES" ] ; then
@@ -580,6 +577,9 @@ if [ $INIT -eq 1 ] && [ $RECONF -eq 0 ] && [ $ATTACH -eq 0 ] && \
 
     rescan $PF_DEV
 
+    # Check VF number argument
+    check_vf_num $VF_NUM
+
     set_queues $PF_DEV $Q_NUM
 
     if [ $VF_NUM -gt 0 ] ; then
@@ -590,10 +590,10 @@ elif [ $RECONF -eq 1 ] && [ $INIT -eq 0 ] && [ $ATTACH -eq 0 ] && \
     [ $DETACH -eq 0 ] && [ $LIST_VFS -eq 0 ] && [ $LIST_VF_VM -eq 0 ];  then
 # Reconfigure command
 
+    rescan $PF_DEV
+
     # Check VF number argument
     check_vf_num $VF_NUM
-
-    rescan $PF_DEV
 
     CURR_VF_NUM=$(cat ${DEVICE_PATH}/${PF_DEV}/sriov_numvfs 2> /dev/null)
     if [ ${CURR_VF_NUM:-0} -eq $VF_NUM ] ; then
