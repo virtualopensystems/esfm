@@ -393,7 +393,7 @@ EOF
 function virsh_detach_all() {
 
     # Iterate on all VF
-    for vf_path in $(ls -d ${DEVICE_PATH}/${PF_DEV}/virtfn*)
+    for vf_path in $(ls -d ${DEVICE_PATH}/${PF_DEV}/virtfn* 2>/dev/null)
     do
         vf_dev=$(echo $(realpath ${vf_path}) | grep -o '[^\/]*$')
         tmp_file=$(ls ${TMP_BASE}*${TMP_EXT} 2> /dev/null | grep ${vf_dev})
