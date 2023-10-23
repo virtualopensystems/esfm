@@ -32,32 +32,32 @@ Utility to attach and detach VF to VMs
 
 Usage: $(basename $0) <pf_dev> <command> [options]
 
-  <pf_dev>                  Pass the PF device ID in the format
-                              DDDD:BB:DD.F Domain:Bus:Device.Function
+  <pf_dev>                         Pass the PF device ID in the format
+                                  DDDD:BB:DD.F Domain:Bus:Device.Function
 
 Available commands:
-  init <VF_NUM>             Init PF device with VF_NUM virtual functions and
-                              attach them to VM (flash bitstream if provided)
-  reconf <VF_NUM>           Reconfigure num of VF and attach them to VMs (flash
-                              bitstream if provided). Use 0 to remove all VFs
+  init <VF_NUM>                    Init PF device with VF_NUM virtual functions and
+                                 attach them to VM (flash bitstream if provided)
+  reconf <VF_NUM>                  Reconfigure num of VF and attach them to VMs (flash
+                                 bitstream if provided). Use 0 to remove all VFs
 
-  attach <VF_IDX> <VM_NAME> Attach VF_IDX to VM_NAME
+  attach <VF_IDX> <VM_NAME>        Attach VF_IDX to VM_NAME
 
-  detach <VF_IDX>           Detach VF_IDX from the VM it is attached to
+  detach <VF_IDX>                  Detach VF_IDX from the VM it is attached to
 
-  list_vfs                  List VF for a given PF
+  list_vfs                         List VF for a given PF
 
-  list_vf_vm                List VF association to VM
+  list_vf_vm                       List VF association to VM
 
 Available options:
-  -b, --bitstream <file>    Also flash the provided bitstream file
-  -qn, --queues_num <num>   Define number of queues during init, default is $Q_NUM_DEFAULT
-  -p, --pause               Pause the VF attached to the VMs when removing them
-  -h, --help                Print this help and exit
-  -q, --quiet               Do not print info messages
-  -d, --driver_log          Print driver log info
-  -v, --verbose             Print script debug info
-  -y, --yes                 Automatic yes to prompts
+  -b, --bitstream <file> <vf_type> Also flash the provided bitstream file
+  -qn, --queues_num <num>          Define number of queues during init, default is $Q_NUM_DEFAULT
+  -p, --pause                      Pause the VF attached to the VMs when removing them
+  -h, --help                       Print this help and exit
+  -q, --quiet                      Do not print info messages
+  -d, --driver_log                 Print driver log info
+  -v, --verbose                    Print script debug info
+  -y, --yes                        Automatic yes to prompts
 EOF
 }
 
@@ -303,12 +303,13 @@ function attach_detach_fake_device() {
     local tmp_file=".everest_tmp_${PF_DEV}_${vf_idx}${TMP_EXT}"
     local vf_bdf=$(virsh dumpxml ${vm_name} | grep "/hostdev" -B1 | awk -F"'" '/<address/{print $6$8$10}' | awk -F"0x" '{print $2$3$4}')
     local tot_num_vf=$(cat ${DEVICE_PATH}/${PF_DEV}/sriov_numvfs 2> /dev/null)
+    local vf_type=$(cat "${VF_TYPE_PATH}")
 
 cat << EOF > ${tmp_file}
 <channel type="file">
   <source path="/dev/null" append='on'>
   </source>
-  <target type="virtio" name="everestvf_${tot_num_vf:-0}_${vf_idx}_000${vf_bdf}"/>
+  <target type="virtio" name="everestvf_${tot_num_vf:-0}_${vf_idx}_000${vf_bdf}_${vf_type}"/>
 </channel>
 EOF
     if [ $attach -eq 1 ] ; then
@@ -486,6 +487,7 @@ DETACH=0
 LIST_VFS=0
 LIST_VF_VM=0
 BITFILE=""
+VF_TYPE=""
 VF_NUM=0
 VF_IDX=""
 PAUSE=0
@@ -520,7 +522,7 @@ do
         list_vfs)               LIST_VFS=1 ;;
         list_vf_vm)             LIST_VF_VM=1 ;;
     # options
-        -b | --bitstream)       BITFILE=${2-}; shift ;;
+        -b | --bitstream)       BITFILE=${2-}; VF_TYPE=${3-}; shift; shift ;;
         -qn | --queues_num)     Q_NUM=${2-}; shift ;;
         -p | --pause)           PAUSE=1 ;;
         -q | --quiet)           QUIET=1 ;;
@@ -548,11 +550,18 @@ if [ ! -d "$CFG_DIR" ] ; then
 fi
 # Create name of temp file for current PF after parsing of pf_dev argument
 declare -r TMP_BASE="${CFG_DIR}/${PF_DEV}_"
+# Create name of a temp file for the current vf type
+declare -r VF_TYPE_PATH="${CFG_DIR}/everest_vf_type"
 
 # Execute command
 if [ $INIT -eq 1 ] && [ $RECONF -eq 0 ] && [ $ATTACH -eq 0 ] && \
     [ $DETACH -eq 0 ] && [ $LIST_VFS -eq 0 ] && [ $LIST_VF_VM -eq 0 ]; then
 # Init command
+
+    if [[ -n "$BITFILE" && -z "$VF_TYPE" ]] ; then
+        usage
+        exit 22
+    fi
 
     # If tmp files are present, VF were assigned to VM but not detached
     TMP_FILES=$(ls ${TMP_BASE}*${TMP_EXT} 2> /dev/null)
@@ -571,8 +580,9 @@ if [ $INIT -eq 1 ] && [ $RECONF -eq 0 ] && [ $ATTACH -eq 0 ] && \
     remove $PF_DEV
 
     # Also flash bitstream if option is provided
-    if [ -n "$BITFILE" ] ; then
+    if [[ -n "$BITFILE" ]] ; then
         flash_bitstream $BITFILE
+        echo "${VF_TYPE}" > "${VF_TYPE_PATH}"
     fi
 
     rescan $PF_DEV
@@ -590,6 +600,11 @@ elif [ $RECONF -eq 1 ] && [ $INIT -eq 0 ] && [ $ATTACH -eq 0 ] && \
     [ $DETACH -eq 0 ] && [ $LIST_VFS -eq 0 ] && [ $LIST_VF_VM -eq 0 ];  then
 # Reconfigure command
 
+    if [[ -n "$BITFILE" && -z "$VF_TYPE" ]] ; then
+        usage
+        exit 22
+    fi
+
     rescan $PF_DEV
 
     # Check VF number argument
@@ -603,9 +618,10 @@ elif [ $RECONF -eq 1 ] && [ $INIT -eq 0 ] && [ $ATTACH -eq 0 ] && \
     virsh_detach_all
 
     # Also flash bitstream if provided
-    if [ -n "$BITFILE" ] ; then
+    if [[ -n "$BITFILE" ]] ; then
         remove $PF_DEV
         flash_bitstream $BITFILE
+        echo "${VF_TYPE}" > "${VF_TYPE_PATH}"
         rescan $PF_DEV
         set_queues $PF_DEV $Q_NUM
     fi
