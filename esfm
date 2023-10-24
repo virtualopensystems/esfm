@@ -583,6 +583,7 @@ if [ $INIT -eq 1 ] && [ $RECONF -eq 0 ] && [ $ATTACH -eq 0 ] && \
     if [[ -n "$BITFILE" ]] ; then
         flash_bitstream $BITFILE
         echo "${VF_TYPE}" > "${VF_TYPE_PATH}"
+        chmod 777 ${VF_TYPE_PATH}
     fi
 
     rescan $PF_DEV
@@ -622,6 +623,7 @@ elif [ $RECONF -eq 1 ] && [ $INIT -eq 0 ] && [ $ATTACH -eq 0 ] && \
         remove $PF_DEV
         flash_bitstream $BITFILE
         echo "${VF_TYPE}" > "${VF_TYPE_PATH}"
+        chmod 777 ${VF_TYPE_PATH}
         rescan $PF_DEV
         set_queues $PF_DEV $Q_NUM
     fi
