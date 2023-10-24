@@ -345,7 +345,7 @@ function virsh_attach() {
     local vf_file="${TMP_BASE}${vm_name}_${vf_dev}${TMP_EXT}"
     local vm_live=$(virsh list | grep "${vm_name}" | grep "running" | wc -l)
     if [ $PAUSE -eq 1 ] && [ $vm_live -eq 1 ] && [ -f $vf_file ] ; then
-        msg "Unpausing VF ${vf_dev} of live VM ${vm_name}"
+        msg "Unpausing VF ${vf_idx} of live VM ${vm_name}"
 
         # Bind VF to vfio drivers
         $QDMA_MANAGER bind-vfio -b ${vf_dev} -y ${DRIVER_LOG}
@@ -376,9 +376,9 @@ EOF
         local live_par=""
         if [ $vm_live -eq 1 ] ; then
             live_par="--live"
-            msg "Attaching VF ${vf_dev} to live VM ${vm_name}"
+            msg "Attaching VF ${vf_idx} to live VM ${vm_name}"
         else
-            msg "Attaching VF ${vf_dev} to offline VM ${vm_name}"
+            msg "Attaching VF ${vf_idx} to offline VM ${vm_name}"
         fi
         virsh attach-device ${vm_name} ${vf_file} ${live_par} --config > /dev/null
         if [ $? -eq 0 ] ; then
@@ -426,29 +426,29 @@ function virsh_detach() {
     local vm_name=$(echo $file | sed -e "s|${TMP_BASE}\(.*\)_.*${TMP_EXT}|\1|")
     local vm_live=$(virsh list | grep "${vm_name}" | grep "running" | wc -l)
     if [ $PAUSE -eq 1 ] && [ $vm_live -eq 1 ] ; then
-        msg "Pausing VF ${vf_dev} of live VM ${vm_name}"
+        msg "Pausing VF ${vf_idx} of live VM ${vm_name}"
 
             # Sending QEMU monitor pause command
             virsh qemu-monitor-command ${vm_name} --pretty ${QEMU_CMD_PAUSE} > /dev/null
 
             # Unbind VF from its driver
             $QDMA_MANAGER unbind -b ${vf_dev} -y ${DRIVER_LOG}
+    else
+        local live_par=""
+        if [ $vm_live -eq 1 ] ; then
+            live_par="--live"
+            msg "Detaching VF ${vf_idx} from live VM ${vm_name}"
         else
-            local live_par=""
-            if [ $vm_live -eq 1 ] ; then
-                live_par="--live"
-                msg "Detaching VF ${vf_dev} from live VM ${vm_name}"
-            else
-                msg "Detaching VF ${vf_dev} from offline VM ${vm_name}"
-            fi
+            msg "Detaching VF ${vf_idx} from offline VM ${vm_name}"
+        fi
 
-            attach_detach_fake_device 0 ${vf_idx} ${vm_name} ${live_par}
-            virsh detach-device ${vm_name} ${file} ${live_par} --config > /dev/null
-            if [ $? -eq 0 ] ; then
-                rm $file
-            else
-                ask_yes "Do you want to remove the VF file \"${file}\"?" rm $file
-            fi
+        attach_detach_fake_device 0 ${vf_idx} ${vm_name} ${live_par}
+        virsh detach-device ${vm_name} ${file} ${live_par} --config > /dev/null
+        if [ $? -eq 0 ] ; then
+            rm $file
+        else
+            ask_yes "Do you want to remove the VF file \"${file}\"?" rm $file
+        fi
     fi
 }
 ################################################################################
