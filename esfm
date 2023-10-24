@@ -673,12 +673,12 @@ elif [ $LIST_VFS -eq 1 ] && [ $INIT -eq 0 ] && [ $RECONF -eq 0 ] && \
     if [[ $? == 0 ]] ; then
 
         # Iterate on all VF
-        for vf_path in $(ls -d ${DEVICE_PATH}/${PF_DEV}/virtfn*)
+        for vf_path in $(ls -d ${DEVICE_PATH}/${PF_DEV}/virtfn* | sort -V)
         do
             # Print VF_IDX and VF_DEV
             vf_dev=$(echo $(realpath ${vf_path}) | grep -o '[^\/]*$')
             vf_idx=$(echo $vf_path | sed -e "s|.*virtfn\([0-9]*\)|\1|")
-            echo "${vf_idx} ${vf_dev}"
+            printf "%3d  %s\n" ${vf_idx} ${vf_dev}
         done
     fi
 
