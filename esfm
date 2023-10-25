@@ -697,7 +697,7 @@ elif [ $LIST_VF_VM -eq 1 ] && [ $INIT -eq 0 ] && [ $RECONF -eq 0 ] && \
                 # Print VF_IDX and VM_NAME
                 vf_idx=$(echo $vf_path | sed -e "s|.*virtfn\([0-9]*\)|\1|")
                 vm_name=$(echo $tmp_file | sed -e "s|${TMP_BASE}\(.*\)_.*${TMP_EXT}|\1|")
-                echo "${vf_idx} ${vm_name}"
+                printf "%3d  %s\n" ${vf_idx} ${vm_name}
             fi
         done
     fi
