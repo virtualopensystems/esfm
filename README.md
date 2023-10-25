@@ -11,19 +11,24 @@ The ESFM is capable of:
 
 
 Prerequisites are:
-
 - Linux-based host server (x86) with root access and virtualization extensions (KVM) (tested on RHEL 8.7, kernel Linux 4.18)
 - QEMU 7.1.0 patched with pause functionality and libvirt 8
 - Linux-based QEMU VMs (tested on 4 Ubuntu 22.04 VM, kernel 5.15, platform Standard PC \_Q35 + ICH9, 2009\_)
-- Xilinx Alveo FPGA (tested on Alveo U55c) with QDMA and multiple Virtual Functions (VFs), demo provided as `qdma_demo.bit`
+- Xilinx Alveo FPGA (tested on Alveo U55c) with QDMA and multiple Virtual Functions (VFs)
 - QDMA Linux drivers with custom drivers for the accelerators
 
 
-To test it on 4 VMs with the FPGA device id `0000:83:00.0`:
+Three bitstream for the U55c are provided for testing purposes:
+- "Helm8HBM.bit": 8 Helmholtz kernels, 8GB HBM
+- "PTDR4HBM2.bit": 4 PTDR kernels, 16GB HBM
+- "PTDR15HBM.bit": 15 PTDR kernels, 8GB HBM
+
+
+To test it with 4 VFs on the FPGA with device id `0000:83:00.0`:
 ```shell
 $> git clone Everests SDK
 $> cd esfm
-$> ./esfm 0000:83:00.0 init 4 --bitstream qdma_demo.bit
+$> ./esfm 0000:83:00.0 init 4 --bitstream PTDR15HBM.bit ptdr
 ```
 
 To change the number of VF attached to the VMs to 2:

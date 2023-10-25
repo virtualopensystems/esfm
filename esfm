@@ -32,32 +32,29 @@ Utility to attach and detach VF to VMs
 
 Usage: $(basename $0) <pf_dev> <command> [options]
 
-  <pf_dev>                         Pass the PF device ID in the format
-                                  DDDD:BB:DD.F Domain:Bus:Device.Function
+  <pf_dev>                  Pass the PF device ID in the format
+                              DDDD:BB:DD.F Domain:Bus:Device.Function
 
 Available commands:
-  init <VF_NUM>                    Init PF device with VF_NUM virtual functions and
-                                 attach them to VM (flash bitstream if provided)
-  reconf <VF_NUM>                  Reconfigure num of VF and attach them to VMs (flash
-                                 bitstream if provided). Use 0 to remove all VFs
-
-  attach <VF_IDX> <VM_NAME>        Attach VF_IDX to VM_NAME
-
-  detach <VF_IDX>                  Detach VF_IDX from the VM it is attached to
-
-  list_vfs                         List VF for a given PF
-
-  list_vf_vm                       List VF association to VM
+  init <VF_NUM>             Init PF device with VF_NUM virtual functions and
+                              attach them to VM (flash bitstream if provided)
+  reconf <VF_NUM>           Reconfigure num of VF and attach them to VMs (can
+                              flash bitstream); use 0 to remove all VFs
+  attach <VF_IDX> <VM_NAME> Attach VF_IDX to VM_NAME
+  detach <VF_IDX>           Detach VF_IDX from the VM it is attached to
+  list_vfs                  List VF for a given PF
+  list_vf_vm                List VF association to VM
 
 Available options:
-  -b, --bitstream <file> <vf_type> Also flash the provided bitstream file
-  -qn, --queues_num <num>          Define number of queues during init, default is $Q_NUM_DEFAULT
-  -p, --pause                      Pause the VF attached to the VMs when removing them
-  -h, --help                       Print this help and exit
-  -q, --quiet                      Do not print info messages
-  -d, --driver_log                 Print driver log info
-  -v, --verbose                    Print script debug info
-  -y, --yes                        Automatic yes to prompts
+  -b, --bitstream <file> <vf_type>
+                            Flash the provided bitstream and set the VF type
+  -qn, --queues_num <num>   Define number of queues during init, default is $Q_NUM_DEFAULT
+  -p, --pause               Pause the VF attached to the VMs when removing them
+  -h, --help                Print this help and exit
+  -q, --quiet               Do not print info messages
+  -d, --driver_log          Print driver log info
+  -v, --verbose             Print script debug info
+  -y, --yes                 Automatic yes to prompts
 EOF
 }
 
