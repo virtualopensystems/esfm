@@ -44,6 +44,7 @@ Available commands:
   detach <VF_IDX>           Detach VF_IDX from the VM it is attached to
   list_vfs                  List VF for a given PF
   list_vf_vm                List VF association to VM
+  print_kernel              Print latest kernel flashed inside <pf_dev>
 
 Available options:
   -b, --bitstream <file> <vf_type>
@@ -457,6 +458,7 @@ declare -r QDMA_MANAGER="${SCRIPT_DIR}/tools/qdma_manager.sh"
 declare -r PROGRAM_XSCT="${SCRIPT_DIR}/tools/program_xsct.tcl"
 declare -r PROGRAM_VIVADO="${SCRIPT_DIR}/tools/program_vivado.tcl"
 declare -r DEVICE_PATH="/sys/bus/pci/devices"
+declare -r KERNEL_TYPE_FILE="everest_vf_type"
 declare -r TMP_EXT=".xml"
 declare -r Q_NUM_DEFAULT=32
 declare -r QEMU_CMD_PAUSE='{"execute":"device_pause","arguments":{"id":"hostdev0","pause":true}}'
@@ -483,6 +485,7 @@ ATTACH=0
 DETACH=0
 LIST_VFS=0
 LIST_VF_VM=0
+PRINT_CURRENT_KERN=0
 BITFILE=""
 VF_TYPE=""
 VF_NUM=0
@@ -518,6 +521,7 @@ do
         detach)                 DETACH=1; VF_IDX=${2-}; shift ;;
         list_vfs)               LIST_VFS=1 ;;
         list_vf_vm)             LIST_VF_VM=1 ;;
+        print_kernel)           PRINT_CURRENT_KERN=1 ;;
     # options
         -b | --bitstream)       BITFILE=${2-}; VF_TYPE=${3-}; shift; shift ;;
         -qn | --queues_num)     Q_NUM=${2-}; shift ;;
@@ -552,7 +556,7 @@ declare -r VF_TYPE_PATH="${CFG_DIR}/everest_vf_type"
 
 # Execute command
 if [ $INIT -eq 1 ] && [ $RECONF -eq 0 ] && [ $ATTACH -eq 0 ] && \
-    [ $DETACH -eq 0 ] && [ $LIST_VFS -eq 0 ] && [ $LIST_VF_VM -eq 0 ]; then
+    [ $DETACH -eq 0 ] && [ $LIST_VFS -eq 0 ] && [ $LIST_VF_VM -eq 0 ] && [ $PRINT_CURRENT_KERN -eq 0 ]; then
 # Init command
 
     if [[ -n "$BITFILE" && -z "$VF_TYPE" ]] ; then
@@ -595,7 +599,7 @@ if [ $INIT -eq 1 ] && [ $RECONF -eq 0 ] && [ $ATTACH -eq 0 ] && \
     fi
 
 elif [ $RECONF -eq 1 ] && [ $INIT -eq 0 ] && [ $ATTACH -eq 0 ] && \
-    [ $DETACH -eq 0 ] && [ $LIST_VFS -eq 0 ] && [ $LIST_VF_VM -eq 0 ];  then
+    [ $DETACH -eq 0 ] && [ $LIST_VFS -eq 0 ] && [ $LIST_VF_VM -eq 0 ] && [ $PRINT_CURRENT_KERN -eq 0 ];  then
 # Reconfigure command
 
     if [[ -n "$BITFILE" && -z "$VF_TYPE" ]] ; then
@@ -633,7 +637,7 @@ elif [ $RECONF -eq 1 ] && [ $INIT -eq 0 ] && [ $ATTACH -eq 0 ] && \
     fi
 
 elif [ $ATTACH -eq 1 ] && [ $INIT -eq 0 ] && [ $RECONF -eq 0 ] && \
-    [ $DETACH -eq 0 ] && [ $LIST_VFS -eq 0 ] && [ $LIST_VF_VM -eq 0 ]; then
+    [ $DETACH -eq 0 ] && [ $LIST_VFS -eq 0 ] && [ $LIST_VF_VM -eq 0 ] && [ $PRINT_CURRENT_KERN -eq 0 ]; then
 # Attach command
 
     # Check if a VM named VM_NAME exists
@@ -650,7 +654,7 @@ elif [ $ATTACH -eq 1 ] && [ $INIT -eq 0 ] && [ $RECONF -eq 0 ] && \
     virsh_attach $VM_NAME $VF_IDX
 
 elif [ $DETACH -eq 1 ] && [ $INIT -eq 0 ] && [ $RECONF -eq 0 ] && \
-    [ $ATTACH -eq 0 ] && [ $LIST_VFS -eq 0 ] && [ $LIST_VF_VM -eq 0 ]; then
+    [ $ATTACH -eq 0 ] && [ $LIST_VFS -eq 0 ] && [ $LIST_VF_VM -eq 0 ] && [ $PRINT_CURRENT_KERN -eq 0 ]; then
 # Detach command
 
     # Check if VF with ID VF_IDX exists
@@ -662,7 +666,7 @@ elif [ $DETACH -eq 1 ] && [ $INIT -eq 0 ] && [ $RECONF -eq 0 ] && \
     virsh_detach ${VF_IDX}
 
 elif [ $LIST_VFS -eq 1 ] && [ $INIT -eq 0 ] && [ $RECONF -eq 0 ] && \
-    [ $ATTACH -eq 0 ] && [ $DETACH -eq 0 ] && [ $LIST_VF_VM -eq 0 ]; then
+    [ $ATTACH -eq 0 ] && [ $DETACH -eq 0 ] && [ $LIST_VF_VM -eq 0 ] && [ $PRINT_CURRENT_KERN -eq 0 ]; then
 # List vfs command
 
     # Check if any VF exist
@@ -680,7 +684,7 @@ elif [ $LIST_VFS -eq 1 ] && [ $INIT -eq 0 ] && [ $RECONF -eq 0 ] && \
     fi
 
 elif [ $LIST_VF_VM -eq 1 ] && [ $INIT -eq 0 ] && [ $RECONF -eq 0 ] && \
-    [ $ATTACH -eq 0 ] && [ $DETACH -eq 0 ] && [ $LIST_VFS -eq 0 ]; then
+    [ $ATTACH -eq 0 ] && [ $DETACH -eq 0 ] && [ $LIST_VFS -eq 0 ] && [ $PRINT_CURRENT_KERN -eq 0 ]; then
 # List vf_vm command
 
     # Check if any VF exist
@@ -702,6 +706,13 @@ elif [ $LIST_VF_VM -eq 1 ] && [ $INIT -eq 0 ] && [ $RECONF -eq 0 ] && \
         done
     fi
 
+elif [ $PRINT_CURRENT_KERN -eq 1 ] && [ $LIST_VF_VM -eq 0 ] && [ $INIT -eq 0 ] && [ $RECONF -eq 0 ] && \
+    [ $ATTACH -eq 0 ] && [ $DETACH -eq 0 ] && [ $LIST_VFS -eq 0 ]; then
+    if [ -f ${CFG_DIR}/${KERNEL_TYPE_FILE} ]; then
+        echo $(cat ${CFG_DIR}/${KERNEL_TYPE_FILE})
+    else
+        echo "No file named everest_vf_type was found"
+    fi
 else
     echo "ERROR: Select only one option!"
     usage
