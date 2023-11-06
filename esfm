@@ -1,9 +1,16 @@
 #!/bin/env bash
 ################################################################################
-# Copyright (C) 2022 - Virtual Open Systems SAS - All rights reserved.
-# Reproduction and communication of this document is strictly prohibited
-# unless specifically authorized in writing by Virtual Open Systems.
-################################################################################
+# Copyright (c) 2023-2024 Virtual Open Systems SAS - All rights reserved.
+#
+# This source code is free software; you can redistribute it and/or modify it
+# under the terms and conditions of the GNU General Public License,
+# version 2, as published by the Free Software Foundation.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+# FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+# more details.
+#
 # File Name   : esfm
 # Author      : STEFANO CIRICI <s.cirici@virtualopensystems.com>
 # Description : This file composes the EVEREST SRIOV FPGA Manager
@@ -302,6 +309,7 @@ function attach_detach_fake_device() {
     local vf_bdf=$(virsh dumpxml ${vm_name} | grep "/hostdev" -B1 | awk -F"'" '/<address/{print $6$8$10}' | awk -F"0x" '{print $2$3$4}')
     local tot_num_vf=$(cat ${DEVICE_PATH}/${PF_DEV}/sriov_numvfs 2> /dev/null)
     local vf_type=$(cat "${VF_TYPE_PATH}")
+    vf_type=$(echo ${vf_type} | awk -F " " '{ print $1 }')
 
 cat << EOF > ${tmp_file}
 <channel type="file">
@@ -584,6 +592,8 @@ if [ $INIT -eq 1 ] && [ $RECONF -eq 0 ] && [ $ATTACH -eq 0 ] && \
     if [[ -n "$BITFILE" ]] ; then
         flash_bitstream $BITFILE
         echo "${VF_TYPE}" > "${VF_TYPE_PATH}"
+        echo $(echo $(realpath ${BITFILE}) | grep -o '[^\/]*$') >> "${VF_TYPE_PATH}"
+        echo $(date) >> "${VF_TYPE_PATH}"
         chmod 777 ${VF_TYPE_PATH}
     fi
 
@@ -624,6 +634,8 @@ elif [ $RECONF -eq 1 ] && [ $INIT -eq 0 ] && [ $ATTACH -eq 0 ] && \
         remove $PF_DEV
         flash_bitstream $BITFILE
         echo "${VF_TYPE}" > "${VF_TYPE_PATH}"
+        echo $(echo $(realpath ${BITFILE}) | grep -o '[^\/]*$') >> "${VF_TYPE_PATH}"
+        echo $(date) >> "${VF_TYPE_PATH}"
         chmod 777 ${VF_TYPE_PATH}
         rescan $PF_DEV
         set_queues $PF_DEV $Q_NUM
@@ -708,8 +720,8 @@ elif [ $LIST_VF_VM -eq 1 ] && [ $INIT -eq 0 ] && [ $RECONF -eq 0 ] && \
 
 elif [ $PRINT_CURRENT_KERN -eq 1 ] && [ $LIST_VF_VM -eq 0 ] && [ $INIT -eq 0 ] && [ $RECONF -eq 0 ] && \
     [ $ATTACH -eq 0 ] && [ $DETACH -eq 0 ] && [ $LIST_VFS -eq 0 ]; then
-    if [ -f ${CFG_DIR}/${KERNEL_TYPE_FILE} ]; then
-        echo $(cat ${CFG_DIR}/${KERNEL_TYPE_FILE})
+    if [ -f ${VF_TYPE_PATH} ]; then
+        echo $(cat ${VF_TYPE_PATH})
     else
         echo "No file named everest_vf_type was found"
     fi

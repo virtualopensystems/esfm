@@ -1,9 +1,16 @@
 #!/bin/env bash
 ################################################################################
-# Copyright (C) 2022 - Virtual Open Systems SAS - All rights reserved.
-# Reproduction and communication of this document is strictly prohibited
-# unless specifically authorized in writing by Virtual Open Systems.
-################################################################################
+# Copyright (c) 2023-2024 Virtual Open Systems SAS - All rights reserved.
+#
+# This source code is free software; you can redistribute it and/or modify it
+# under the terms and conditions of the GNU General Public License,
+# version 2, as published by the Free Software Foundation.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+# FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+# more details.
+#
 # File Name   : qdma_manager.sh
 # Author      : STEFANO CIRICI <s.cirici@virtualopensystems.com>
 # Description : This file composes the QDMA manager functionalities allowing

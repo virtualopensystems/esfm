@@ -82,6 +82,7 @@ Available commands:
   detach <VF_IDX>           Detach VF_IDX from the VM it is attached to
   list_vfs                  List VF for a given PF
   list_vf_vm                List VF association to VM
+  print_kernel              Print latest kernel flashed inside <pf_dev>
 
 Available options:
   -b, --bitstream <file>    Also flash the provided bitstream file
